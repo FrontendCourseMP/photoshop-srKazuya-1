@@ -1,0 +1,116 @@
+/* Toolbar Styles */
+
+.toolbar {
+  width: 200px;
+  background: #f0f0f0;
+  border-right: 1px solid #ccc;
+  padding: 15px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.toolbar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolbar-section h3 {
+  margin: 0;
+  padding: 5px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #ddd;
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  background: #e8f0ff;
+  border-color: #0066cc;
+  color: #0066cc;
+  box-shadow: 0 2px 4px rgba(0, 102, 204, 0.1);
+}
+
+.toolbar-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(0, 102, 204, 0.2);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #999;
+}
+
+.btn-icon {
+  font-size: 16px;
+  display: inline-block;
+}
+
+@media (max-width: 1024px) {
+  .toolbar {
+    width: 160px;
+    padding: 10px;
+    gap: 15px;
+  }
+
+  .toolbar-section h3 {
+    font-size: 12px;
+  }
+
+  .toolbar-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .btn-icon {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #ccc;
+    flex-direction: row;
+    gap: 10px;
+    padding: 10px;
+    overflow-x: auto;
+  }
+
+  .toolbar-section {
+    flex-direction: row;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-section h3 {
+    display: none;
+  }
+
+  .toolbar-btn {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}

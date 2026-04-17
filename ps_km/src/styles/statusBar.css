@@ -1,0 +1,118 @@
+/* Status Bar Styles */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 32px;
+  background: #f5f5f5;
+  border-top: 1px solid #d0d0d0;
+  padding: 0 12px;
+  font-size: 12px;
+  color: #333333;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.status-message {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: #455a64;
+  min-width: 100px;
+}
+
+.image-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  overflow-x: auto;
+  padding-right: 10px;
+}
+
+.info-item {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #333333;
+}
+
+.info-item strong {
+  font-weight: 600;
+  color: #333333;
+  white-space: nowrap;
+}
+
+.separator {
+  color: #b0b0b0;
+  margin: 0 4px;
+}
+
+/* Scrollbar styling */
+.image-info::-webkit-scrollbar {
+  height: 6px;
+}
+
+.image-info::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.image-info::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+.image-info::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+@media (max-width: 1024px) {
+  .status-bar {
+    gap: 12px;
+    padding: 0 10px;
+    font-size: 11px;
+    height: 28px;
+  }
+
+  .status-message {
+    min-width: 80px;
+  }
+
+  .info-item {
+    gap: 3px;
+  }
+
+  .separator {
+    display: none;
+  }
+
+  .image-info {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 768px) {
+  .status-bar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 28px;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  .image-info {
+    width: 100%;
+    gap: 8px;
+    overflow-x: auto;
+    padding-right: 0;
+  }
+
+  .separator {
+    display: inline;
+  }
+
+  .info-item {
+    font-size: 11px;
+  }
+}

@@ -1,0 +1,85 @@
+/* Canvas Display Styles */
+
+.canvas-display {
+  flex: 1;
+  background: linear-gradient(45deg, #d0d0d0 25%, transparent 25%, transparent 75%, #d0d0d0 75%, #d0d0d0),
+              linear-gradient(45deg, #d0d0d0 25%, transparent 25%, transparent 75%, #d0d0d0 75%, #d0d0d0);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  background-color: #e8e8e8;
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-viewport {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease-out;
+}
+
+.canvas-viewport img {
+  display: block;
+  border: 1px solid #a0a0a0;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.12);
+  max-width: 100%;
+  max-height: 100%;
+  background: white;
+}
+
+.canvas-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: #666666;
+  font-size: 16px;
+  border: 2px dashed #b0b0b0;
+  border-radius: 4px;
+  padding: 40px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.canvas-placeholder p {
+  margin: 0;
+}
+
+.zoom-info {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .canvas-display {
+    flex: 1;
+    min-height: 400px;
+  }
+
+  .canvas-placeholder {
+    height: 200px;
+    font-size: 14px;
+    padding: 20px;
+  }
+
+  .zoom-info {
+    bottom: 8px;
+    right: 8px;
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+}
