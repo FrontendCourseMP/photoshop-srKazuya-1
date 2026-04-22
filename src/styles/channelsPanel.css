@@ -1,0 +1,137 @@
+/* Channels Panel Styles */
+
+.channels-panel {
+  background: #454545;
+  border: 1px solid #2c2c2c;
+  border-radius: 2px;
+  padding: 8px;
+  margin: 0 0 10px 0;
+  min-height: 100px;
+}
+
+.channels-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #d8d8d8;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.no-image-message {
+  color: #a8a8a8;
+  font-size: 11px;
+  margin: 0;
+  padding: 10px 0;
+}
+
+.channels-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.channel-button {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: 4px 8px;
+  border: 2px solid transparent;
+  background: #505050;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.channel-button:hover {
+  background: #5a5a5a;
+  border-color: #777;
+}
+
+.channel-button.active {
+  border-color: #9c9c9c;
+  background: #656565;
+}
+
+.channel-button.inactive {
+  opacity: 0.6;
+}
+
+.channel-button.red {
+  border-left: 3px solid #ff5555;
+}
+
+.channel-button.green {
+  border-left: 3px solid #55ff55;
+}
+
+.channel-button.blue {
+  border-left: 3px solid #5555ff;
+}
+
+.channel-thumbnail {
+  width: 54px;
+  height: 54px;
+  border: 1px solid #2b2b2b;
+  border-radius: 2px;
+  display: block;
+  margin-bottom: 0;
+  background: white;
+  image-rendering: pixelated;
+}
+
+.channel-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #dddddd;
+  margin-bottom: 0;
+  text-align: center;
+  word-break: break-word;
+  flex: 1;
+  text-align: left;
+  margin-left: 8px;
+}
+
+.channel-status {
+  font-size: 11px;
+  font-weight: bold;
+  color: #f0f0f0;
+}
+
+.channel-button.inactive .channel-status {
+  color: #9a9a9a;
+}
+
+.channel-button.composite {
+  border-left: 3px solid #d9d9d9;
+}
+
+.channel-preview-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 90px;
+}
+
+.channel-preview-full canvas {
+  width: 80px;
+  height: 80px;
+  border: 2px solid #4a9eff;
+  border-radius: 2px;
+  margin-bottom: 4px;
+  background: white;
+  image-rendering: pixelated;
+}
+
+.preview-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #4a9eff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

@@ -1,0 +1,104 @@
+/* Tools Panel Styles */
+
+.tools-panel {
+  width: 54px;
+  background: #3a3a3a;
+  border-right: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.tools-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 0 4px;
+  align-items: center;
+}
+
+.tool-button {
+  width: 44px;
+  height: 44px;
+  background: #454545;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  position: relative;
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tool-button:hover {
+  background: #505050;
+  border-color: #555;
+}
+
+.tool-button.active {
+  background: #2196f3;
+  border-color: #1976d2;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(33, 150, 243, 0.4);
+}
+
+.tool-icon {
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tool-shortcut {
+  font-size: 8px;
+  font-weight: 600;
+  color: inherit;
+  margin-top: 1px;
+  opacity: 0.7;
+}
+
+.tool-button.active .tool-shortcut {
+  opacity: 1;
+}
+
+/* Tooltip */
+.tool-button:focus-visible {
+  outline: 2px solid #90caf9;
+  outline-offset: -2px;
+}
+
+@media (max-width: 768px) {
+  .tools-panel {
+    width: 48px;
+    padding: 4px 0;
+  }
+
+  .tool-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tool-icon {
+    font-size: 15px;
+  }
+
+  .tool-icon svg {
+    width: 15px;
+    height: 15px;
+  }
+}

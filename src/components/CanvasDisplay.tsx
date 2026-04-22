@@ -4,14 +4,19 @@
  */
 
 import React, { useRef, useEffect, useState } from 'react';
+import { getPixelColor } from '../utils/colorUtils';
 import '../styles/canvasDisplay.css';
 
 interface CanvasDisplayProps {
   canvas?: HTMLCanvasElement;
+  isPickerActive?: boolean;
+  imageData?: Uint8Array;
+  width?: number;
+  height?: number;
 }
 
 export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps>(
-  ({ canvas }, ref) => {
+  ({ canvas, isPickerActive = false, imageData, width = 0, height = 0 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(100);
     const [isDragging, setIsDragging] = useState(false);
@@ -40,9 +45,37 @@ export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps
     }, [zoom, canvas]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
-      if (e.button !== 2) return; // Средняя или правая кнопка
-      setIsDragging(true);
-      setDragStart({ x: e.clientX, y: e.clientY });
+      if (isPickerActive) {
+        // Пипетка активна
+        handlePickerClick(e);
+      } else if (e.button !== 2) {
+        // Средняя или правая кнопка для перемещения
+        return;
+      } else {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX, y: e.clientY });
+      }
+    };
+
+    const handlePickerClick = (e: React.MouseEvent) => {
+      if (!canvas || !imageData || width === 0 || height === 0) return;
+
+      const imageElement = containerRef.current?.querySelector('img');
+      if (!imageElement) return;
+
+      const rect = imageElement.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
+
+      if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) return;
+
+      const x = Math.floor((localX / rect.width) * width);
+      const y = Math.floor((localY / rect.height) * height);
+      const color = getPixelColor(imageData, width, height, x, y);
+      if (color) {
+        const event = new CustomEvent('colorpicked', { detail: color });
+        window.dispatchEvent(event);
+      }
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -75,7 +108,7 @@ export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps
         aria-label="Область отображения изображения"
         aria-live="polite"
         style={{
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isPickerActive ? 'crosshair' : (isDragging ? 'grabbing' : 'grab'),
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

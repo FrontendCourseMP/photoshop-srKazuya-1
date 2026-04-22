@@ -2,7 +2,11 @@ import { useState, useRef } from 'react';
 import { CanvasDisplay } from './components/CanvasDisplay';
 import { StatusBar } from './components/StatusBar';
 import { LayersPanel } from './components/LayersPanel';
-import { loadImage, downloadAsPng, downloadAsJpg, downloadAsGb7, type ImageInfo } from './utils/imageProcessor';
+import { ChannelsPanel } from './components/ChannelsPanel';
+import { ColorPicker } from './components/ColorPicker';
+import { ToolsPanel } from './components/ToolsPanel';
+import { loadImage, downloadAsPng, downloadAsJpg, downloadAsGb7, createCanvasFromImageData, type ImageInfo } from './utils/imageProcessor';
+import { applyChannelFilter, type ChannelState } from './utils/channelUtils';
 import './App.css';
 
 interface Layer {
@@ -19,6 +23,16 @@ function App() {
   const [layers, setLayers] = useState<Layer[]>([
     { id: '1', name: 'Фоновый слой', visible: true, opacity: 100 },
   ]);
+  const [originalImageData, setOriginalImageData] = useState<Uint8Array | undefined>();
+  const [activeTool, setActiveTool] = useState<'none' | 'picker'>('none');
+  const [showChannelsPanel, setShowChannelsPanel] = useState(false);
+  const [isWindowMenuOpen, setIsWindowMenuOpen] = useState(false);
+  const [, setChannels] = useState<ChannelState>({
+    red: true,
+    green: true,
+    blue: true,
+    alpha: true,
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageLoad = async (file: File) => {
@@ -28,6 +42,17 @@ function App() {
       
       setCanvas(processedImage.canvas);
       setImageInfo(processedImage.info);
+      // Сохраняем оригинальные данные для работы с каналами
+      if (processedImage.originalData) {
+        setOriginalImageData(new Uint8Array(processedImage.originalData));
+      } else {
+        // Если оригинальные данные не сохранены, достаем их из canvas
+        const ctx = processedImage.canvas.getContext('2d');
+        if (ctx) {
+          const imageData = ctx.getImageData(0, 0, processedImage.canvas.width, processedImage.canvas.height);
+          setOriginalImageData(new Uint8Array(imageData.data));
+        }
+      }
       setStatus(`Изображение загружено: ${file.name}`);
       
       setLayers([
@@ -38,6 +63,15 @@ function App() {
           opacity: 100,
         },
       ]);
+
+      // Сбрасываем выбранные каналы и инструмент
+      setChannels({
+        red: true,
+        green: true,
+        blue: true,
+        alpha: true,
+      });
+      setActiveTool('none');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       setStatus(`Ошибка: ${errorMessage}`);
@@ -99,6 +133,42 @@ function App() {
     ));
   };
 
+  const handleChannelsChange = (newChannels: ChannelState) => {
+    setChannels(newChannels);
+    
+    // Применяем фильтр каналов к изображению
+    if (originalImageData && imageInfo && canvas) {
+      const filteredData = applyChannelFilter(
+        originalImageData,
+        imageInfo.width,
+        imageInfo.height,
+        newChannels
+      );
+      
+      const newCanvas = createCanvasFromImageData(filteredData, imageInfo.width, imageInfo.height);
+      setCanvas(newCanvas);
+      setStatus('Каналы обновлены');
+    }
+  };
+
+  const handleToolClick = (tool: 'none' | 'picker') => {
+    setActiveTool(tool);
+    if (tool === 'picker') {
+      setStatus('Пипетка активна. Нажмите на холст для выбора цвета');
+    } else {
+      setStatus('Пипетка отключена');
+    }
+  };
+
+  const handleToolSelect = (tool: string) => {
+    if (tool === 'eyedropper') {
+      handleToolClick(activeTool === 'picker' ? 'none' : 'picker');
+      return;
+    }
+    setActiveTool('none');
+    setStatus(`Инструмент "${tool}" недоступен в текущей версии`);
+  };
+
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -116,38 +186,71 @@ function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <div className="header-content">
-          <h1>Web Photoshop</h1>
-          <nav className="header-nav" aria-label="Основное меню">
-            <div className="nav-group">
+        <div className="menu-bar" role="menubar" aria-label="Главное меню">
+          <div className="menu-item-group">
+            <button className="menu-item-btn" onClick={handleOpenClick} type="button">File</button>
+            <button className="menu-item-btn" type="button">Edit</button>
+            <button className="menu-item-btn" type="button">Image</button>
+            <button className="menu-item-btn" type="button">Layer</button>
+            <button className="menu-item-btn" type="button">Select</button>
+            <button className="menu-item-btn" type="button">Filter</button>
+            <button className="menu-item-btn" type="button">View</button>
+            <div
+              className="menu-dropdown"
+              onMouseLeave={() => setIsWindowMenuOpen(false)}
+            >
               <button
-                onClick={handleOpenClick}
-                className="header-btn"
-                aria-label="Открыть изображение из файла"
-                title="Открыть изображение (Ctrl+O)"
+                className="menu-item-btn"
+                type="button"
+                onClick={() => setIsWindowMenuOpen((prev) => !prev)}
+                aria-expanded={isWindowMenuOpen}
+                aria-haspopup="menu"
               >
-                Открыть
+                Window
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".png,.jpg,.jpeg,.gb7"
-                onChange={handleFileInput}
-                style={{ display: 'none' }}
-                aria-hidden="true"
-              />
+              {isWindowMenuOpen && (
+                <div className="dropdown-menu" role="menu" aria-label="Окна">
+                  <button
+                    className="dropdown-menu-item"
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={showChannelsPanel}
+                    onClick={() => setShowChannelsPanel((prev) => !prev)}
+                  >
+                    <span>{showChannelsPanel ? '✓' : ''}</span>
+                    <span>Channels</span>
+                  </button>
+                </div>
+              )}
             </div>
-
-            <div className="nav-group">
-              <button
-                onClick={handleExportPng}
-                disabled={!canvas}
-                className="header-btn"
-                aria-label="Экспортировать изображение как PNG"
-                title="Сохранить как PNG"
-              >
-                Export PNG
-              </button>
+            <button className="menu-item-btn" type="button">Help</button>
+          </div>
+          <div className="menu-actions">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".png,.jpg,.jpeg,.gb7"
+              onChange={handleFileInput}
+              style={{ display: 'none' }}
+              aria-hidden="true"
+            />
+            <button
+              onClick={handleOpenClick}
+              className="header-btn"
+              aria-label="Открыть изображение из файла"
+              title="Открыть изображение (Ctrl+O)"
+            >
+              Открыть
+            </button>
+            <button
+              onClick={handleExportPng}
+              disabled={!canvas}
+              className="header-btn"
+              aria-label="Экспортировать изображение как PNG"
+              title="Сохранить как PNG"
+            >
+              PNG
+            </button>
               <button
                 onClick={handleExportJpg}
                 disabled={!canvas}
@@ -155,7 +258,7 @@ function App() {
                 aria-label="Экспортировать изображение как JPEG"
                 title="Сохранить как JPG"
               >
-                Export JPEG
+                JPG
               </button>
               <button
                 onClick={handleExportGb7}
@@ -164,24 +267,51 @@ function App() {
                 aria-label="Экспортировать изображение как GB7"
                 title="Сохранить как GB7 (GrayBit-7)"
               >
-                Export GB7
+                GB7
               </button>
-            </div>
-          </nav>
+          </div>
         </div>
       </header>
 
       <div className="app-main">
-        <CanvasDisplay
-          canvas={canvas}
+        <ToolsPanel
+          activeTool={activeTool === 'picker' ? 'eyedropper' : 'none'}
+          onToolSelect={handleToolSelect}
         />
+        <div className="app-main-left">
+          <CanvasDisplay
+            canvas={canvas}
+            isPickerActive={activeTool === 'picker'}
+            imageData={originalImageData}
+            width={imageInfo?.width}
+            height={imageInfo?.height}
+          />
+        </div>
 
-        <LayersPanel
-          layers={layers}
-          onLayerToggle={handleLayerToggle}
-          onOpacityChange={handleOpacityChange}
-        />
+        <div className="app-main-right">
+          {showChannelsPanel && (
+            <ChannelsPanel
+              imageData={originalImageData}
+              width={imageInfo?.width}
+              height={imageInfo?.height}
+              onChannelsChange={handleChannelsChange}
+            />
+          )}
+
+          <LayersPanel
+            layers={layers}
+            onLayerToggle={handleLayerToggle}
+            onOpacityChange={handleOpacityChange}
+          />
+        </div>
       </div>
+
+      <ColorPicker
+        isActive={activeTool === 'picker'}
+        imageData={originalImageData}
+        width={imageInfo?.width}
+        height={imageInfo?.height}
+      />
 
       <StatusBar
         imageInfo={imageInfo}
