@@ -14,6 +14,80 @@ export interface ImageInfo {
   fileSize: number;
 }
 
+/**
+ * Определить глубину цвета PNG файла из заголовка
+ */
+function getPngBitDepth(arrayBuffer: ArrayBuffer): number {
+  const view = new Uint8Array(arrayBuffer);
+  
+  // PNG сигнатура: 89 50 4E 47 0D 0A 1A 0A (8 байт)
+  if (view.length < 25) return 8;
+  
+  // Проверка сигнатуры PNG
+  const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  for (let i = 0; i < 8; i++) {
+    if (view[i] !== pngSignature[i]) return 8;
+  }
+  
+  // После сигнатуры (8 байт):
+  // - Длина IHDR чанка (4 байта, всегда 13 для IHDR)
+  // - "IHDR" идентификатор (4 байта)
+  // - IHDR данные (13 байт): width(4) + height(4) + bitDepth(1) + colorType(1) + compression(1) + filter(1) + interlace(1)
+  // Позиция bitDepth: 8 + 4 + 4 + 4 + 4 = 24
+  const bitDepth = view[24];
+  
+  return bitDepth;
+}
+
+/**
+ * Определить глубину цвета JPEG файла из маркеров
+ */
+function getJpegBitDepth(arrayBuffer: ArrayBuffer): number {
+  const view = new Uint8Array(arrayBuffer);
+  
+  // JPEG файл начинается с FFD8 (маркер SOI)
+  if (view.length < 4 || view[0] !== 0xff || view[1] !== 0xd8) return 8;
+  
+  // Поиск маркера SOF (Start of Frame)
+  let offset = 2;
+  
+  while (offset < view.length - 8) {
+    if (view[offset] !== 0xff) break;
+    
+    const marker = view[offset + 1];
+    
+    // SOF маркеры: FFC0, FFC1, FFC2, FFC9, FFCA, FFCB, FFCD, FFCE
+    // (пропускаем RSTm маркеры FFD0-FFD7 и другие служебные)
+    const isSofMarker = (marker >= 0xc0 && marker <= 0xc3) || 
+                        (marker >= 0xc9 && marker <= 0xcb) || 
+                        marker === 0xcd || marker === 0xce;
+    
+    if (isSofMarker) {
+      // Структура SOF:
+      // FF C0 (маркер)
+      // Длина (2 байта)
+      // Sample precision (1 байт) - количество бит на компонент
+      // Height (2 байта)
+      // Width (2 байта)
+      // Number of components (1 байт) - 1 для grayscale, 3 для RGB, 4 для CMYK
+      
+      const samplePrecision = view[offset + 4]; // В байтах от маркера
+      const numComponents = view[offset + 9];   // В байтах от маркера
+      
+      const totalBitDepth = samplePrecision * numComponents;
+      return totalBitDepth;
+    }
+    
+    // Переход к следующему маркеру
+    // Длина сегмента хранится в 2 байтах после маркера (big-endian)
+    const segmentLength = (view[offset + 2] << 8) | view[offset + 3];
+    offset += segmentLength + 2;
+  }
+  
+  // Значение по умолчанию для JPEG (8 бит на компонент * 3 компонента для RGB)
+  return 24;
+}
+
 export interface ProcessedImage {
   canvas: HTMLCanvasElement;
   info: ImageInfo;
@@ -38,7 +112,7 @@ export async function loadImage(file: File): Promise<ProcessedImage> {
     info = {
       width: gb7Data.width,
       height: gb7Data.height,
-      bitDepth: 7,
+      bitDepth: gb7Data.bitDepth,
       format: 'gb7',
       hasMask: gb7Data.hasMask,
       fileSize: file.size,
@@ -46,23 +120,25 @@ export async function loadImage(file: File): Promise<ProcessedImage> {
     originalData = new Uint8Array(arrayBuffer);
   } else if (fileName.endsWith('.png')) {
     // Обработка PNG
+    const bitDepth = getPngBitDepth(arrayBuffer);
     const imageData = await loadPngOrJpg(arrayBuffer);
     canvas = createCanvasFromImageData(imageData.data, imageData.width, imageData.height);
     info = {
       width: imageData.width,
       height: imageData.height,
-      bitDepth: 8,
+      bitDepth: bitDepth,
       format: 'png',
       fileSize: file.size,
     };
   } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
     // Обработка JPG
+    const bitDepth = getJpegBitDepth(arrayBuffer);
     const imageData = await loadPngOrJpg(arrayBuffer);
     canvas = createCanvasFromImageData(imageData.data, imageData.width, imageData.height);
     info = {
       width: imageData.width,
       height: imageData.height,
-      bitDepth: 8,
+      bitDepth: bitDepth,
       format: 'jpg',
       fileSize: file.size,
     };
