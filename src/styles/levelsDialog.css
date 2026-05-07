@@ -1,0 +1,125 @@
+.levels-dialog {
+  width: min(760px, calc(100vw - 40px));
+  position: fixed;
+  margin: 0;
+  border: 1px solid #1f1f1f;
+  border-radius: 6px;
+  background: #2f2f2f;
+  color: #ececec;
+  padding: 14px;
+}
+
+.levels-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.levels-header {
+  cursor: move;
+  user-select: none;
+}
+
+.levels-header h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.levels-empty {
+  margin: 12px 0;
+  color: #bbbbbb;
+}
+
+.levels-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.levels-label {
+  min-width: 90px;
+  font-size: 12px;
+}
+
+.levels-select {
+  width: 100%;
+  height: 28px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #414141;
+  color: #f5f5f5;
+  padding: 0 8px;
+}
+
+.histogram-wrap {
+  border: 1px solid #4b4b4b;
+  background: #1f1f1f;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.histogram-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  height: 230px;
+  width: 100%;
+}
+
+.histogram-bar {
+  flex: 1;
+  background: linear-gradient(to top, #bfbfbf, #ececec);
+  min-width: 1px;
+}
+
+.histogram-axis {
+  margin-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #aaaaaa;
+}
+
+.levels-sliders {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.levels-sliders label {
+  font-size: 12px;
+}
+
+.levels-sliders input[type='range'] {
+  width: 100%;
+}
+
+.levels-preview-toggle {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.levels-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.levels-actions button {
+  border: 1px solid #575757;
+  background: #484848;
+  color: #f2f2f2;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.levels-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

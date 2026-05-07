@@ -76,7 +76,7 @@
 
 .dropdown-menu {
   position: absolute;
-  top: 26px;
+  top: 100%;
   left: 0;
   min-width: 160px;
   background: #3c3c3c;
@@ -108,6 +108,11 @@
 
 .dropdown-menu-item:hover {
   background: #505050;
+}
+
+.dropdown-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .app-main {

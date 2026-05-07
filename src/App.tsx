@@ -1,12 +1,14 @@
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CanvasDisplay } from './components/CanvasDisplay';
 import { StatusBar } from './components/StatusBar';
 import { LayersPanel } from './components/LayersPanel';
 import { ChannelsPanel } from './components/ChannelsPanel';
 import { ColorPicker } from './components/ColorPicker';
 import { ToolsPanel } from './components/ToolsPanel';
+import { LevelsDialog } from './components/LevelsDialog';
 import { loadImage, downloadAsPng, downloadAsJpg, downloadAsGb7, createCanvasFromImageData, type ImageInfo } from './utils/imageProcessor';
 import { applyChannelFilter, type ChannelState } from './utils/channelUtils';
+import { applyLevelsToImage, createDefaultLevelsState, type LevelsState } from './utils/levelsUtils';
 import './App.css';
 
 interface Layer {
@@ -27,13 +29,43 @@ function App() {
   const [activeTool, setActiveTool] = useState<'none' | 'picker'>('none');
   const [showChannelsPanel, setShowChannelsPanel] = useState(false);
   const [isWindowMenuOpen, setIsWindowMenuOpen] = useState(false);
-  const [, setChannels] = useState<ChannelState>({
+  const [isImageMenuOpen, setIsImageMenuOpen] = useState(false);
+  const [isLevelsDialogOpen, setIsLevelsDialogOpen] = useState(false);
+  const [channels, setChannels] = useState<ChannelState>({
     red: true,
     green: true,
     blue: true,
     alpha: true,
   });
+  const [committedLevels, setCommittedLevels] = useState<LevelsState>(createDefaultLevelsState());
+  const [previewLevels, setPreviewLevels] = useState<LevelsState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const levelsForRender = previewLevels ?? committedLevels;
+
+  const levelsSourceData = useMemo(() => {
+    if (!originalImageData) {
+      return undefined;
+    }
+    return applyLevelsToImage(originalImageData, levelsForRender);
+  }, [originalImageData, levelsForRender]);
+
+  useEffect(() => {
+    if (!originalImageData || !imageInfo) {
+      return;
+    }
+
+    const levelsData = applyLevelsToImage(originalImageData, levelsForRender);
+    const filteredData = applyChannelFilter(
+      levelsData,
+      imageInfo.width,
+      imageInfo.height,
+      channels,
+      imageInfo.channelCount
+    );
+    const newCanvas = createCanvasFromImageData(filteredData, imageInfo.width, imageInfo.height);
+    setCanvas(newCanvas);
+  }, [originalImageData, imageInfo, channels, levelsForRender]);
 
   const handleImageLoad = async (file: File) => {
     try {
@@ -71,6 +103,8 @@ function App() {
         blue: true,
         alpha: true,
       });
+      setCommittedLevels(createDefaultLevelsState());
+      setPreviewLevels(null);
       setActiveTool('none');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
@@ -135,21 +169,40 @@ function App() {
 
   const handleChannelsChange = (newChannels: ChannelState) => {
     setChannels(newChannels);
-    
-    // Применяем фильтр каналов к изображению
-    if (originalImageData && imageInfo && canvas) {
-      const filteredData = applyChannelFilter(
-        originalImageData,
-        imageInfo.width,
-        imageInfo.height,
-        newChannels,
-        imageInfo.channelCount
-      );
-      
-      const newCanvas = createCanvasFromImageData(filteredData, imageInfo.width, imageInfo.height);
-      setCanvas(newCanvas);
+    if (originalImageData && imageInfo) {
       setStatus('Каналы обновлены');
     }
+  };
+
+  const handleOpenLevelsDialog = () => {
+    if (!originalImageData) {
+      return;
+    }
+    setPreviewLevels(null);
+    setIsLevelsDialogOpen(true);
+    setStatus('Уровни: редактирование');
+  };
+
+  const handleLevelsPreviewChange = (nextState: LevelsState | null) => {
+    setPreviewLevels(nextState);
+    if (nextState) {
+      setStatus('Уровни: предпросмотр');
+    } else {
+      setStatus('Уровни: предпросмотр выключен');
+    }
+  };
+
+  const handleLevelsCancel = () => {
+    setPreviewLevels(null);
+    setIsLevelsDialogOpen(false);
+    setStatus('Уровни: изменения отменены');
+  };
+
+  const handleLevelsApply = (nextState: LevelsState) => {
+    setCommittedLevels(nextState);
+    setPreviewLevels(null);
+    setIsLevelsDialogOpen(false);
+    setStatus('Уровни применены');
   };
 
   const handleToolClick = (tool: 'none' | 'picker') => {
@@ -191,7 +244,34 @@ function App() {
           <div className="menu-item-group">
             <button className="menu-item-btn" onClick={handleOpenClick} type="button">Файл</button>
             <button className="menu-item-btn" type="button">Изменить</button>
-            <button className="menu-item-btn" type="button">Изображение</button>
+            <div
+              className="menu-dropdown"
+              onMouseLeave={() => setIsImageMenuOpen(false)}
+            >
+              <button
+                className="menu-item-btn"
+                type="button"
+                onClick={() => setIsImageMenuOpen((prev) => !prev)}
+                aria-expanded={isImageMenuOpen}
+                aria-haspopup="menu"
+              >
+                Изображение
+              </button>
+              {isImageMenuOpen && (
+                <div className="dropdown-menu" role="menu" aria-label="Изображение">
+                  <button
+                    className="dropdown-menu-item"
+                    type="button"
+                    role="menuitem"
+                    onClick={handleOpenLevelsDialog}
+                    disabled={!originalImageData}
+                  >
+                    <span />
+                    <span>Уровни...</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button className="menu-item-btn" type="button">Слои</button>
             {/* <button className="menu-item-btn" type="button">Select</button> */}
             <button className="menu-item-btn" type="button">Фильтр</button>
@@ -313,6 +393,15 @@ function App() {
         imageData={originalImageData}
         width={imageInfo?.width}
         height={imageInfo?.height}
+      />
+
+      <LevelsDialog
+        isOpen={isLevelsDialogOpen}
+        imageData={levelsSourceData}
+        levelsState={committedLevels}
+        onPreviewChange={handleLevelsPreviewChange}
+        onApply={handleLevelsApply}
+        onCancel={handleLevelsCancel}
       />
 
       <StatusBar
