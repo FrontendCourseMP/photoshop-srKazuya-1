@@ -13,6 +13,7 @@ interface ChannelsPanelProps {
   imageData?: Uint8Array;
   width?: number;
   height?: number;
+  sourceChannelCount?: 1 | 2 | 3 | 4;
   onChannelsChange: (channels: ChannelState) => void;
 }
 
@@ -20,6 +21,7 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
   imageData,
   width = 0,
   height = 0,
+  sourceChannelCount,
   onChannelsChange,
 }) => {
   const [channels, setChannels] = useState<ChannelState>({
@@ -35,7 +37,7 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
   useEffect(() => {
     if (!imageData || width === 0 || height === 0) return;
 
-    const count = getChannelCount(width, height, imageData);
+    const count = sourceChannelCount ?? getChannelCount(width, height, imageData);
     setChannelCount(count);
     const resetChannels: ChannelState = { red: true, green: true, blue: true, alpha: true };
     setChannels(resetChannels);
@@ -46,14 +48,16 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
 
     if (count === 1) {
       // Grayscale
-      const preview = createChannelPreview(imageData, width, height);
+      const grayscaleData = extractChannel(imageData, width, height, 0);
+      const preview = createChannelPreview(grayscaleData, width, height);
       newPreviews.set('grayscale', createCanvasFromImageData(preview.data, preview.width, preview.height));
     } else if (count === 2) {
       // Grayscale + Alpha
-      const gsPreview = createChannelPreview(imageData, width, height);
+      const grayscaleData = extractChannel(imageData, width, height, 0);
+      const gsPreview = createChannelPreview(grayscaleData, width, height);
       newPreviews.set('grayscale', createCanvasFromImageData(gsPreview.data, gsPreview.width, gsPreview.height));
 
-      const alphaPreview = createAlphaPreview(imageData, width, height);
+      const alphaPreview = createAlphaPreview(imageData, width, height, count);
       newPreviews.set('alpha', createCanvasFromImageData(alphaPreview.data, alphaPreview.width, alphaPreview.height));
     } else if (count === 3) {
       // RGB
@@ -66,7 +70,7 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
       const bPreview = createChannelPreview(extractChannel(imageData, width, height, 2), width, height);
       newPreviews.set('blue', createCanvasFromImageData(bPreview.data, bPreview.width, bPreview.height));
 
-      const rgbPreview = createRgbPreview(imageData, width, height);
+      const rgbPreview = createRgbPreview(imageData, width, height, count);
       newPreviews.set('rgb', createCanvasFromImageData(rgbPreview.data, rgbPreview.width, rgbPreview.height));
     } else if (count === 4) {
       // RGBA
@@ -79,15 +83,15 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
       const bPreview = createChannelPreview(extractChannel(imageData, width, height, 2), width, height);
       newPreviews.set('blue', createCanvasFromImageData(bPreview.data, bPreview.width, bPreview.height));
 
-      const alphaPreview = createAlphaPreview(imageData, width, height);
+      const alphaPreview = createAlphaPreview(imageData, width, height, count);
       newPreviews.set('alpha', createCanvasFromImageData(alphaPreview.data, alphaPreview.width, alphaPreview.height));
 
-      const rgbaPreview = createRgbPreview(imageData, width, height);
+      const rgbaPreview = createRgbPreview(imageData, width, height, count);
       newPreviews.set('rgba', createCanvasFromImageData(rgbaPreview.data, rgbaPreview.width, rgbaPreview.height));
     }
 
     setPreviews(newPreviews);
-  }, [imageData, width, height]);
+  }, [imageData, width, height, sourceChannelCount]);
 
   const handleChannelToggle = (channel: keyof ChannelState) => {
     const newChannels = { ...channels, [channel]: !channels[channel] };

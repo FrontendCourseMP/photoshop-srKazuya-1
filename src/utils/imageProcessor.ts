@@ -9,6 +9,7 @@ export interface ImageInfo {
   width: number;
   height: number;
   bitDepth: number;
+  channelCount: 1 | 2 | 3 | 4;
   format: 'png' | 'jpg' | 'gb7';
   hasMask?: boolean;
   fileSize: number;
@@ -17,16 +18,16 @@ export interface ImageInfo {
 /**
  * Определить глубину цвета PNG файла из заголовка
  */
-function getPngBitDepth(arrayBuffer: ArrayBuffer): number {
+function getPngMetadata(arrayBuffer: ArrayBuffer): { bitDepth: number; channelCount: 1 | 2 | 3 | 4 } {
   const view = new Uint8Array(arrayBuffer);
   
   // PNG сигнатура: 89 50 4E 47 0D 0A 1A 0A (8 байт)
-  if (view.length < 25) return 8;
+  if (view.length < 26) return { bitDepth: 32, channelCount: 4 };
   
   // Проверка сигнатуры PNG
   const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   for (let i = 0; i < 8; i++) {
-    if (view[i] !== pngSignature[i]) return 8;
+    if (view[i] !== pngSignature[i]) return { bitDepth: 32, channelCount: 4 };
   }
   
   // После сигнатуры (8 байт):
@@ -34,19 +35,36 @@ function getPngBitDepth(arrayBuffer: ArrayBuffer): number {
   // - "IHDR" идентификатор (4 байта)
   // - IHDR данные (13 байт): width(4) + height(4) + bitDepth(1) + colorType(1) + compression(1) + filter(1) + interlace(1)
   // Позиция bitDepth: 8 + 4 + 4 + 4 + 4 = 24
-  const bitDepth = view[24];
-  
-  return bitDepth;
+  const sampleBitDepth = view[24];
+  const colorType = view[25];
+
+  // Color type PNG:
+  // 0 - Grayscale, 2 - RGB, 3 - Indexed-color, 4 - Grayscale + Alpha, 6 - RGBA
+  const channelsByColorType: Record<number, 1 | 2 | 3 | 4> = {
+    0: 1,
+    2: 3,
+    3: 3,
+    4: 2,
+    6: 4,
+  };
+  const channelCount = channelsByColorType[colorType] ?? 4;
+
+  return {
+    bitDepth: sampleBitDepth * channelCount,
+    channelCount,
+  };
 }
 
 /**
  * Определить глубину цвета JPEG файла из маркеров
  */
-function getJpegBitDepth(arrayBuffer: ArrayBuffer): number {
+function getJpegMetadata(arrayBuffer: ArrayBuffer): { bitDepth: number; channelCount: 1 | 2 | 3 | 4 } {
   const view = new Uint8Array(arrayBuffer);
   
   // JPEG файл начинается с FFD8 (маркер SOI)
-  if (view.length < 4 || view[0] !== 0xff || view[1] !== 0xd8) return 8;
+  if (view.length < 4 || view[0] !== 0xff || view[1] !== 0xd8) {
+    return { bitDepth: 24, channelCount: 3 };
+  }
   
   // Поиск маркера SOF (Start of Frame)
   let offset = 2;
@@ -74,8 +92,9 @@ function getJpegBitDepth(arrayBuffer: ArrayBuffer): number {
       const samplePrecision = view[offset + 4]; // В байтах от маркера
       const numComponents = view[offset + 9];   // В байтах от маркера
       
-      const totalBitDepth = samplePrecision * numComponents;
-      return totalBitDepth;
+      const channelCount = Math.max(1, Math.min(4, numComponents)) as 1 | 2 | 3 | 4;
+      const totalBitDepth = samplePrecision * channelCount;
+      return { bitDepth: totalBitDepth, channelCount };
     }
     
     // Переход к следующему маркеру
@@ -85,7 +104,7 @@ function getJpegBitDepth(arrayBuffer: ArrayBuffer): number {
   }
   
   // Значение по умолчанию для JPEG (8 бит на компонент * 3 компонента для RGB)
-  return 24;
+  return { bitDepth: 24, channelCount: 3 };
 }
 
 export interface ProcessedImage {
@@ -113,6 +132,7 @@ export async function loadImage(file: File): Promise<ProcessedImage> {
       width: gb7Data.width,
       height: gb7Data.height,
       bitDepth: gb7Data.bitDepth,
+      channelCount: gb7Data.hasMask ? 2 : 1,
       format: 'gb7',
       hasMask: gb7Data.hasMask,
       fileSize: file.size,
@@ -120,25 +140,27 @@ export async function loadImage(file: File): Promise<ProcessedImage> {
     originalData = new Uint8Array(arrayBuffer);
   } else if (fileName.endsWith('.png')) {
     // Обработка PNG
-    const bitDepth = getPngBitDepth(arrayBuffer);
+    const pngMeta = getPngMetadata(arrayBuffer);
     const imageData = await loadPngOrJpg(arrayBuffer);
     canvas = createCanvasFromImageData(imageData.data, imageData.width, imageData.height);
     info = {
       width: imageData.width,
       height: imageData.height,
-      bitDepth: bitDepth,
+      bitDepth: pngMeta.bitDepth,
+      channelCount: pngMeta.channelCount,
       format: 'png',
       fileSize: file.size,
     };
   } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
     // Обработка JPG
-    const bitDepth = getJpegBitDepth(arrayBuffer);
+    const jpegMeta = getJpegMetadata(arrayBuffer);
     const imageData = await loadPngOrJpg(arrayBuffer);
     canvas = createCanvasFromImageData(imageData.data, imageData.width, imageData.height);
     info = {
       width: imageData.width,
       height: imageData.height,
-      bitDepth: bitDepth,
+      bitDepth: jpegMeta.bitDepth,
+      channelCount: jpegMeta.channelCount,
       format: 'jpg',
       fileSize: file.size,
     };

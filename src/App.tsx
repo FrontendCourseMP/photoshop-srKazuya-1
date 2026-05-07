@@ -142,7 +142,8 @@ function App() {
         originalImageData,
         imageInfo.width,
         imageInfo.height,
-        newChannels
+        newChannels,
+        imageInfo.channelCount
       );
       
       const newCanvas = createCanvasFromImageData(filteredData, imageInfo.width, imageInfo.height);
@@ -188,13 +189,13 @@ function App() {
       <header className="app-header">
         <div className="menu-bar" role="menubar" aria-label="Главное меню">
           <div className="menu-item-group">
-            <button className="menu-item-btn" onClick={handleOpenClick} type="button">File</button>
-            <button className="menu-item-btn" type="button">Edit</button>
-            <button className="menu-item-btn" type="button">Image</button>
-            <button className="menu-item-btn" type="button">Layer</button>
-            <button className="menu-item-btn" type="button">Select</button>
-            <button className="menu-item-btn" type="button">Filter</button>
-            <button className="menu-item-btn" type="button">View</button>
+            <button className="menu-item-btn" onClick={handleOpenClick} type="button">Файл</button>
+            <button className="menu-item-btn" type="button">Изменить</button>
+            <button className="menu-item-btn" type="button">Изображение</button>
+            <button className="menu-item-btn" type="button">Слои</button>
+            {/* <button className="menu-item-btn" type="button">Select</button> */}
+            <button className="menu-item-btn" type="button">Фильтр</button>
+            <button className="menu-item-btn" type="button">Вид</button>
             <div
               className="menu-dropdown"
               onMouseLeave={() => setIsWindowMenuOpen(false)}
@@ -206,7 +207,7 @@ function App() {
                 aria-expanded={isWindowMenuOpen}
                 aria-haspopup="menu"
               >
-                Window
+                Окно
               </button>
               {isWindowMenuOpen && (
                 <div className="dropdown-menu" role="menu" aria-label="Окна">
@@ -218,12 +219,12 @@ function App() {
                     onClick={() => setShowChannelsPanel((prev) => !prev)}
                   >
                     <span>{showChannelsPanel ? '✓' : ''}</span>
-                    <span>Channels</span>
+                    <span>Каналы</span>
                   </button>
                 </div>
               )}
             </div>
-            <button className="menu-item-btn" type="button">Help</button>
+            <button className="menu-item-btn" type="button">Помощь</button>
           </div>
           <div className="menu-actions">
             <input
@@ -294,6 +295,7 @@ function App() {
               imageData={originalImageData}
               width={imageInfo?.width}
               height={imageInfo?.height}
+              sourceChannelCount={imageInfo?.channelCount}
               onChannelsChange={handleChannelsChange}
             />
           )}
