@@ -57,7 +57,7 @@ export function getPixelColor(
     a = imageData[pixelStart + 3];
   }
   
-  // Преобразуем в CIELAB
+  // LABПреобразуем в CIE
   const lab = rgbToLab(r, g, b);
   
   return {

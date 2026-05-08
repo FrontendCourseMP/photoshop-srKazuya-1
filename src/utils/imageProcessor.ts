@@ -123,8 +123,8 @@ export async function loadImage(file: File): Promise<ProcessedImage> {
   let info: ImageInfo;
   let originalData: Uint8Array | undefined;
 
-  if (fileName.endsWith('.gb7')) {
-    // Обработка GB7 формата
+  if (fileName.endsWith('.gb7') || fileName.endsWith('.jb7')) {
+    // Обработка GB7/JB7 формата
     const gb7Data = decodeGB7(arrayBuffer);
     
     canvas = createCanvasFromImageData(gb7Data.data, gb7Data.width, gb7Data.height);
@@ -137,7 +137,8 @@ export async function loadImage(file: File): Promise<ProcessedImage> {
       hasMask: gb7Data.hasMask,
       fileSize: file.size,
     };
-    originalData = new Uint8Array(arrayBuffer);
+    // Внутренний пайплайн (каналы/уровни) работает с RGBA-данными, а не с сырым бинарным файлом.
+    originalData = new Uint8Array(gb7Data.data);
   } else if (fileName.endsWith('.png')) {
     // Обработка PNG
     const pngMeta = getPngMetadata(arrayBuffer);

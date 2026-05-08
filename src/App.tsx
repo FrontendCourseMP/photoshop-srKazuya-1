@@ -310,7 +310,7 @@ function App() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".png,.jpg,.jpeg,.gb7"
+              accept=".png,.jpg,.jpeg,.gb7,.jb7"
               onChange={handleFileInput}
               style={{ display: 'none' }}
               aria-hidden="true"
