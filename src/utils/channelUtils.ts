@@ -227,10 +227,11 @@ export function applyChannelFilter(
         } else if (!channels.red && bytesPerPixel === 2) {
           filteredData[pixelStart] = 0;
         }
+        // Отключение альфа: показать серый без маски (GB7 хранит «скрытое» изображение в gray при mask=0)
         if (!channels.alpha && bytesPerPixel >= 4) {
-          filteredData[pixelStart + 3] = 0;
+          filteredData[pixelStart + 3] = 255;
         } else if (!channels.alpha && bytesPerPixel === 2) {
-          filteredData[pixelStart + 1] = 0;
+          filteredData[pixelStart + 1] = 255;
         }
       }
     } else if (channelCount === 3 && bytesPerPixel >= 3) {
@@ -251,7 +252,7 @@ export function applyChannelFilter(
         if (!channels.red) filteredData[pixelStart] = 0;
         if (!channels.green) filteredData[pixelStart + 1] = 0;
         if (!channels.blue) filteredData[pixelStart + 2] = 0;
-        if (!channels.alpha) filteredData[pixelStart + 3] = 0;
+        if (!channels.alpha) filteredData[pixelStart + 3] = 255;
       }
     }
   }

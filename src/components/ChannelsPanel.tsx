@@ -246,6 +246,8 @@ interface ChannelButtonProps {
   isComposite?: boolean;
 }
 
+const THUMBNAIL_SIZE = 54;
+
 const ChannelButton: React.FC<ChannelButtonProps> = ({
   label,
   active,
@@ -264,14 +266,25 @@ const ChannelButton: React.FC<ChannelButtonProps> = ({
         <canvas
           ref={(ref) => {
             if (ref && preview) {
+              ref.width = THUMBNAIL_SIZE;
+              ref.height = THUMBNAIL_SIZE;
               const ctx = ref.getContext('2d');
               if (ctx) {
-                ctx.drawImage(preview, 0, 0);
+                ctx.clearRect(0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+                const scale = Math.min(
+                  THUMBNAIL_SIZE / preview.width,
+                  THUMBNAIL_SIZE / preview.height
+                );
+                const dw = preview.width * scale;
+                const dh = preview.height * scale;
+                const dx = (THUMBNAIL_SIZE - dw) / 2;
+                const dy = (THUMBNAIL_SIZE - dh) / 2;
+                ctx.drawImage(preview, 0, 0, preview.width, preview.height, dx, dy, dw, dh);
               }
             }
           }}
-          width={Math.min(80, preview.width)}
-          height={Math.min(80, preview.height)}
           className="channel-thumbnail"
         />
       )}

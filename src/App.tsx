@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CanvasDisplay } from './components/CanvasDisplay';
 import { StatusBar } from './components/StatusBar';
 import { LayersPanel } from './components/LayersPanel';
@@ -51,13 +51,12 @@ function App() {
   }, [originalImageData, levelsForRender]);
 
   useEffect(() => {
-    if (!originalImageData || !imageInfo) {
+    if (!levelsSourceData || !imageInfo) {
       return;
     }
 
-    const levelsData = applyLevelsToImage(originalImageData, levelsForRender);
     const filteredData = applyChannelFilter(
-      levelsData,
+      levelsSourceData,
       imageInfo.width,
       imageInfo.height,
       channels,
@@ -65,7 +64,7 @@ function App() {
     );
     const newCanvas = createCanvasFromImageData(filteredData, imageInfo.width, imageInfo.height);
     setCanvas(newCanvas);
-  }, [originalImageData, imageInfo, channels, levelsForRender]);
+  }, [levelsSourceData, imageInfo, channels]);
 
   const handleImageLoad = async (file: File) => {
     try {
@@ -183,14 +182,14 @@ function App() {
     setStatus('Уровни: редактирование');
   };
 
-  const handleLevelsPreviewChange = (nextState: LevelsState | null) => {
+  const handleLevelsPreviewChange = useCallback((nextState: LevelsState | null) => {
     setPreviewLevels(nextState);
     if (nextState) {
       setStatus('Уровни: предпросмотр');
     } else {
       setStatus('Уровни: предпросмотр выключен');
     }
-  };
+  }, []);
 
   const handleLevelsCancel = () => {
     setPreviewLevels(null);
@@ -397,7 +396,7 @@ function App() {
 
       <LevelsDialog
         isOpen={isLevelsDialogOpen}
-        imageData={levelsSourceData}
+        histogramData={originalImageData}
         levelsState={committedLevels}
         onPreviewChange={handleLevelsPreviewChange}
         onApply={handleLevelsApply}

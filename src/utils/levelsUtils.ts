@@ -25,33 +25,55 @@ export function createDefaultLevelsState(): LevelsState {
   };
 }
 
+function channelValueFromPixel(
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  channel: LevelsTargetChannel
+): number {
+  if (channel === 'master') {
+    return Math.round((0.299 * r) + (0.587 * g) + (0.114 * b));
+  }
+  if (channel === 'red') {
+    return r;
+  }
+  if (channel === 'green') {
+    return g;
+  }
+  if (channel === 'blue') {
+    return b;
+  }
+  return a;
+}
+
 export function getHistogram(
   imageData: Uint8Array,
-  channel: LevelsTargetChannel
+  channel: LevelsTargetChannel,
+  levels?: LevelsState
 ): number[] {
   const bins = new Array<number>(256).fill(0);
   const pixelCount = Math.floor(imageData.length / 4);
 
   for (let i = 0; i < pixelCount; i += 1) {
     const offset = i * 4;
-    const r = imageData[offset];
-    const g = imageData[offset + 1];
-    const b = imageData[offset + 2];
-    const a = imageData[offset + 3];
+    let r = imageData[offset];
+    let g = imageData[offset + 1];
+    let b = imageData[offset + 2];
+    let a = imageData[offset + 3];
 
-    let value = 0;
-    if (channel === 'master') {
-      value = Math.round((0.299 * r) + (0.587 * g) + (0.114 * b));
-    } else if (channel === 'red') {
-      value = r;
-    } else if (channel === 'green') {
-      value = g;
-    } else if (channel === 'blue') {
-      value = b;
-    } else {
-      value = a;
+    if (levels) {
+      r = applyLevelsValue(r, levels.master);
+      g = applyLevelsValue(g, levels.master);
+      b = applyLevelsValue(b, levels.master);
+
+      r = applyLevelsValue(r, levels.red);
+      g = applyLevelsValue(g, levels.green);
+      b = applyLevelsValue(b, levels.blue);
+      a = applyLevelsValue(a, levels.alpha);
     }
 
+    const value = channelValueFromPixel(r, g, b, a, channel);
     bins[Math.max(0, Math.min(255, value))] += 1;
   }
 
@@ -111,12 +133,45 @@ export function applyLevelsToImage(
   return result;
 }
 
+/** Верхняя граница шкалы для отрисовки (не меняет сами bins). */
+export function getHistogramDisplayMax(histogram: number[], scale: HistogramScale): number {
+  let max = 0;
+  let secondMax = 0;
+  for (const value of histogram) {
+    if (value > max) {
+      secondMax = max;
+      max = value;
+    } else if (value > secondMax) {
+      secondMax = value;
+    }
+  }
+
+  if (max <= 0) {
+    return 0;
+  }
+
+  if (scale === 'log') {
+    return max;
+  }
+
+  // Линейная: как в Photoshop — пик = 100% высоты; при одном доминирующем
+  // пике остальное почти не видно. Смягчаем только отображение (данные те же).
+  if (secondMax > 0 && max / secondMax > 12) {
+    const nonZero = histogram.filter((v) => v > 0).sort((a, b) => a - b);
+    const idx = Math.min(nonZero.length - 1, Math.floor(nonZero.length * 0.995));
+    return Math.max(nonZero[idx] ?? secondMax, secondMax);
+  }
+
+  return max;
+}
+
+/** Высота столбца 0–100%: линейная — counts/max; лог — log1p, как GIMP/Photoshop. */
 export function histogramValueToHeight(
   value: number,
   maxValue: number,
   scale: HistogramScale
 ): number {
-  if (maxValue <= 0) {
+  if (maxValue <= 0 || value <= 0) {
     return 0;
   }
 

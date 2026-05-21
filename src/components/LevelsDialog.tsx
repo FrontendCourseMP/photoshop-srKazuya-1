@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createDefaultLevelsState,
   gammaToMidpoint,
   getHistogram,
+  getHistogramDisplayMax,
   histogramValueToHeight,
   midpointToGamma,
   type HistogramScale,
@@ -13,7 +14,7 @@ import '../styles/levelsDialog.css';
 
 interface LevelsDialogProps {
   isOpen: boolean;
-  imageData?: Uint8Array;
+  histogramData?: Uint8Array;
   levelsState: LevelsState;
   onPreviewChange: (nextState: LevelsState | null) => void;
   onApply: (nextState: LevelsState) => void;
@@ -28,9 +29,122 @@ const CHANNEL_OPTIONS: Array<{ value: LevelsTargetChannel; label: string }> = [
   { value: 'alpha', label: 'Alpha' },
 ];
 
+const DEFAULT_WIDTH = 520;
+/** Вмещает заголовок, гистограмму, слайдеры и футер без прокрутки */
+const DEFAULT_HEIGHT = 640;
+const MIN_WIDTH = 280;
+const MIN_HEIGHT = 360;
+const PREVIEW_THROTTLE_MS = 48;
+
+function fillHistogramBackground(
+  ctx: CanvasRenderingContext2D,
+  channel: LevelsTargetChannel,
+  width: number,
+  height: number
+): void {
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  switch (channel) {
+    case 'red':
+      gradient.addColorStop(0, '#000000');
+      gradient.addColorStop(1, '#ff0000');
+      break;
+    case 'green':
+      gradient.addColorStop(0, '#000000');
+      gradient.addColorStop(1, '#00ff00');
+      break;
+    case 'blue':
+      gradient.addColorStop(0, '#000000');
+      gradient.addColorStop(1, '#0000ff');
+      break;
+    case 'alpha':
+      gradient.addColorStop(0, '#000000');
+      gradient.addColorStop(0.5, '#808080');
+      gradient.addColorStop(1, '#ffffff');
+      break;
+    default:
+      gradient.addColorStop(0, '#000000');
+      gradient.addColorStop(1, '#ffffff');
+      break;
+  }
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+}
+
+function HistogramCanvas({
+  histogram,
+  maxValue,
+  scale,
+  channel,
+}: {
+  histogram: number[];
+  maxValue: number;
+  scale: HistogramScale;
+  channel: LevelsTargetChannel;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    fillHistogramBackground(ctx, channel, width, height);
+
+    const barWidth = width / 256;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+
+    for (let index = 0; index < 256; index += 1) {
+      const count = histogram[index];
+      if (count <= 0) {
+        continue;
+      }
+      const normalized = histogramValueToHeight(count, maxValue, scale) / 100;
+      const barHeight = Math.max(1, Math.round(normalized * height));
+      ctx.fillRect(index * barWidth, height - barHeight, Math.max(1, barWidth), barHeight);
+    }
+  }, [histogram, maxValue, scale, channel]);
+
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) {
+      return;
+    }
+    const observer = new ResizeObserver(() => draw());
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [draw]);
+
+  return (
+    <div ref={wrapRef} className="histogram-canvas-wrap">
+      <canvas ref={canvasRef} className="histogram-canvas" aria-hidden="true" />
+    </div>
+  );
+}
+
 export function LevelsDialog({
   isOpen,
-  imageData,
+  histogramData,
   levelsState,
   onPreviewChange,
   onApply,
@@ -54,27 +168,87 @@ export function LevelsDialog({
   const [histogramScale, setHistogramScale] = useState<HistogramScale>('linear');
   const [previewEnabled, setPreviewEnabled] = useState(true);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const resizeRef = useRef<{
+    startX: number;
+    startY: number;
+    originW: number;
+    originH: number;
+  } | null>(null);
+  const localLevelsRef = useRef(localLevels);
+  const previewEnabledRef = useRef(previewEnabled);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  localLevelsRef.current = localLevels;
+  previewEnabledRef.current = previewEnabled;
+
+  const clearPreviewTimer = () => {
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+  };
+
+  const emitPreview = useCallback(
+    (immediate = false) => {
+      const payload = previewEnabledRef.current ? localLevelsRef.current : null;
+      if (immediate) {
+        clearPreviewTimer();
+        onPreviewChange(payload);
+        return;
+      }
+      if (previewTimerRef.current) {
+        return;
+      }
+      previewTimerRef.current = setTimeout(() => {
+        previewTimerRef.current = null;
+        onPreviewChange(previewEnabledRef.current ? localLevelsRef.current : null);
+      }, PREVIEW_THROTTLE_MS);
+    },
+    [onPreviewChange]
+  );
 
   useEffect(() => {
     if (!isOpen) {
+      clearPreviewTimer();
       return;
     }
     setLocalLevels(levelsState);
+    localLevelsRef.current = levelsState;
     setActiveChannel('master');
     setHistogramScale('linear');
     setPreviewEnabled(true);
-    const width = Math.min(760, window.innerWidth - 40);
+    previewEnabledRef.current = true;
+    setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+
+    const width = Math.min(DEFAULT_WIDTH, window.innerWidth - 40);
     const centerX = Math.max(20, Math.round((window.innerWidth - width) / 2));
-    const centerY = Math.max(20, Math.round((window.innerHeight - 580) / 2));
+    const centerY = Math.max(20, Math.round((window.innerHeight - DEFAULT_HEIGHT) / 2));
     setPosition({ x: centerX, y: centerY });
-  }, [isOpen, levelsState]);
+    onPreviewChange(levelsState);
+  }, [isOpen, levelsState, onPreviewChange]);
+
+  useEffect(() => () => clearPreviewTimer(), []);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
     const onMove = (event: MouseEvent) => {
+      if (resizeRef.current) {
+        const nextWidth = Math.max(
+          MIN_WIDTH,
+          resizeRef.current.originW + (event.clientX - resizeRef.current.startX)
+        );
+        const nextHeight = Math.max(
+          MIN_HEIGHT,
+          resizeRef.current.originH + (event.clientY - resizeRef.current.startY)
+        );
+        setSize({ width: nextWidth, height: nextHeight });
+        return;
+      }
       if (!dragRef.current) {
         return;
       }
@@ -87,7 +261,12 @@ export function LevelsDialog({
     };
 
     const onUp = () => {
-      dragRef.current = null;
+      if (resizeRef.current) {
+        resizeRef.current = null;
+      }
+      if (dragRef.current) {
+        dragRef.current = null;
+      }
     };
 
     window.addEventListener('mousemove', onMove);
@@ -98,23 +277,16 @@ export function LevelsDialog({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    onPreviewChange(previewEnabled ? localLevels : null);
-  }, [isOpen, previewEnabled, localLevels, onPreviewChange]);
-
   const histogram = useMemo(() => {
-    if (!imageData) {
+    if (!histogramData) {
       return new Array<number>(256).fill(0);
     }
-    return getHistogram(imageData, activeChannel);
-  }, [imageData, activeChannel]);
+    return getHistogram(histogramData, activeChannel, localLevels);
+  }, [histogramData, activeChannel, localLevels]);
 
   const maxHistogramValue = useMemo(
-    () => histogram.reduce((max, value) => (value > max ? value : max), 0),
-    [histogram]
+    () => getHistogramDisplayMax(histogram, histogramScale),
+    [histogram, histogramScale]
   );
 
   const channelSettings = localLevels[activeChannel] ?? createDefaultLevelsState().master;
@@ -125,13 +297,22 @@ export function LevelsDialog({
   );
 
   const setChannelSettings = (next: Partial<LevelsState[LevelsTargetChannel]>) => {
-    setLocalLevels((prev) => ({
-      ...prev,
-      [activeChannel]: sanitizeSettings({
-        ...prev[activeChannel],
-        ...next,
-      }),
-    }));
+    setLocalLevels((prev) => {
+      const updated = {
+        ...prev,
+        [activeChannel]: sanitizeSettings({
+          ...prev[activeChannel],
+          ...next,
+        }),
+      };
+      localLevelsRef.current = updated;
+      emitPreview(false);
+      return updated;
+    });
+  };
+
+  const handleSliderPointerUp = () => {
+    emitPreview(true);
   };
 
   if (!isOpen) {
@@ -143,7 +324,16 @@ export function LevelsDialog({
       open
       className="levels-dialog"
       aria-label="Уровни"
-      style={position ? { left: `${position.x}px`, top: `${position.y}px` } : undefined}
+      style={
+        position
+          ? {
+              left: `${position.x}px`,
+              top: `${position.y}px`,
+              width: `${size.width}px`,
+              height: `${size.height}px`,
+            }
+          : undefined
+      }
     >
       <div
         className="levels-header"
@@ -162,141 +352,177 @@ export function LevelsDialog({
         <h3>Уровни</h3>
       </div>
 
-      {!imageData ? (
-        <p className="levels-empty">Загрузите изображение, чтобы использовать Levels.</p>
-      ) : (
-        <>
-          <div className="levels-controls-row">
-            <label className="levels-label" htmlFor="levels-channel-select">Канал</label>
-            <select
-              id="levels-channel-select"
-              value={activeChannel}
-              onChange={(e) => setActiveChannel(e.target.value as LevelsTargetChannel)}
-              className="levels-select"
-            >
-              {CHANNEL_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="levels-controls-row">
-            <label className="levels-label" htmlFor="levels-histogram-scale">Гистограмма</label>
-            <select
-              id="levels-histogram-scale"
-              value={histogramScale}
-              onChange={(e) => setHistogramScale(e.target.value as HistogramScale)}
-              className="levels-select"
-            >
-              <option value="linear">Линейная</option>
-              <option value="log">Логарифмическая</option>
-            </select>
-          </div>
-
-          <div className="histogram-wrap">
-            <div className="histogram-bars" aria-label="Гистограмма">
-              {histogram.map((value, index) => {
-                const height = histogramValueToHeight(value, maxHistogramValue, histogramScale);
-                return (
-                  <span
-                    key={`hist-${index}`}
-                    className="histogram-bar"
-                    style={{ height: `${height}%` }}
-                  />
-                );
-              })}
+      <div className="levels-content">
+        {!histogramData ? (
+          <p className="levels-empty">Загрузите изображение, чтобы использовать Levels.</p>
+        ) : (
+          <>
+            <div className="levels-controls-row">
+              <label className="levels-label" htmlFor="levels-channel-select">Канал</label>
+              <select
+                id="levels-channel-select"
+                value={activeChannel}
+                onChange={(e) => setActiveChannel(e.target.value as LevelsTargetChannel)}
+                className="levels-select"
+              >
+                {CHANNEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="histogram-axis">
-              <span>0</span>
-              <span>255</span>
+
+            <div className="levels-controls-row">
+              <label className="levels-label" htmlFor="levels-histogram-scale">Гистограмма</label>
+              <select
+                id="levels-histogram-scale"
+                value={histogramScale}
+                onChange={(e) => setHistogramScale(e.target.value as HistogramScale)}
+                className="levels-select"
+              >
+                <option value="linear">Линейная</option>
+                <option value="log">Логарифмическая</option>
+              </select>
             </div>
-          </div>
 
-          <div className="levels-sliders">
-            <label htmlFor="input-black">Черная точка: {channelSettings.inputBlack}</label>
-            <input
-              id="input-black"
-              type="range"
-              min={0}
-              max={channelSettings.inputWhite - 1}
-              value={channelSettings.inputBlack}
-              onChange={(e) => {
-                const nextBlack = Number(e.target.value);
-                const midpoint = Math.max(nextBlack + 1, midpointValue);
-                const safeMid = Math.min(channelSettings.inputWhite - 1, midpoint);
-                setChannelSettings({
-                  inputBlack: nextBlack,
-                  gamma: midpointToGamma(nextBlack, channelSettings.inputWhite, safeMid),
-                });
-              }}
-            />
+            <div className="histogram-wrap">
+              <HistogramCanvas
+                histogram={histogram}
+                maxValue={maxHistogramValue}
+                scale={histogramScale}
+                channel={activeChannel}
+              />
+              <div className="histogram-axis">
+                <span>0</span>
+                <span>255</span>
+              </div>
+            </div>
 
-            <label htmlFor="input-midpoint">Полутона (Gamma): {channelSettings.gamma.toFixed(2)}</label>
-            <input
-              id="input-midpoint"
-              type="range"
-              min={channelSettings.inputBlack + 1}
-              max={channelSettings.inputWhite - 1}
-              value={Math.min(channelSettings.inputWhite - 1, Math.max(channelSettings.inputBlack + 1, midpointValue))}
-              onChange={(e) => {
-                const midpoint = Number(e.target.value);
-                setChannelSettings({
-                  gamma: midpointToGamma(channelSettings.inputBlack, channelSettings.inputWhite, midpoint),
-                });
-              }}
-            />
+            <div className="levels-sliders">
+              <label htmlFor="input-black">Черная точка: {channelSettings.inputBlack}</label>
+              <input
+                id="input-black"
+                type="range"
+                min={0}
+                max={channelSettings.inputWhite - 1}
+                value={channelSettings.inputBlack}
+                onChange={(e) => {
+                  const nextBlack = Number(e.target.value);
+                  const midpoint = Math.max(nextBlack + 1, midpointValue);
+                  const safeMid = Math.min(channelSettings.inputWhite - 1, midpoint);
+                  setChannelSettings({
+                    inputBlack: nextBlack,
+                    gamma: midpointToGamma(nextBlack, channelSettings.inputWhite, safeMid),
+                  });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+              />
 
-            <label htmlFor="input-white">Белая точка: {channelSettings.inputWhite}</label>
-            <input
-              id="input-white"
-              type="range"
-              min={channelSettings.inputBlack + 1}
-              max={255}
-              value={channelSettings.inputWhite}
-              onChange={(e) => {
-                const nextWhite = Number(e.target.value);
-                const midpoint = Math.min(nextWhite - 1, midpointValue);
-                const safeMid = Math.max(channelSettings.inputBlack + 1, midpoint);
-                setChannelSettings({
-                  inputWhite: nextWhite,
-                  gamma: midpointToGamma(channelSettings.inputBlack, nextWhite, safeMid),
-                });
-              }}
-            />
-          </div>
+              <label htmlFor="input-midpoint">
+                Полутона (Gamma): {channelSettings.gamma.toFixed(2)}
+              </label>
+              <input
+                id="input-midpoint"
+                type="range"
+                min={channelSettings.inputBlack + 1}
+                max={channelSettings.inputWhite - 1}
+                value={Math.min(
+                  channelSettings.inputWhite - 1,
+                  Math.max(channelSettings.inputBlack + 1, midpointValue)
+                )}
+                onChange={(e) => {
+                  const midpoint = Number(e.target.value);
+                  setChannelSettings({
+                    gamma: midpointToGamma(
+                      channelSettings.inputBlack,
+                      channelSettings.inputWhite,
+                      midpoint
+                    ),
+                  });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+              />
 
-          <label className="levels-preview-toggle">
-            <input
-              type="checkbox"
-              checked={previewEnabled}
-              onChange={(e) => setPreviewEnabled(e.target.checked)}
-            />
-            <span>Предпросмотр</span>
-          </label>
-        </>
-      )}
+              <label htmlFor="input-white">Белая точка: {channelSettings.inputWhite}</label>
+              <input
+                id="input-white"
+                type="range"
+                min={channelSettings.inputBlack + 1}
+                max={255}
+                value={channelSettings.inputWhite}
+                onChange={(e) => {
+                  const nextWhite = Number(e.target.value);
+                  const midpoint = Math.min(nextWhite - 1, midpointValue);
+                  const safeMid = Math.max(channelSettings.inputBlack + 1, midpoint);
+                  setChannelSettings({
+                    inputWhite: nextWhite,
+                    gamma: midpointToGamma(channelSettings.inputBlack, nextWhite, safeMid),
+                  });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+              />
+            </div>
 
-      <div className="levels-actions">
-        <button
-          type="button"
-          onClick={() => {
-            const reset = createDefaultLevelsState();
-            setLocalLevels(reset);
-          }}
-        >
-          Сброс
-        </button>
-        <button type="button" onClick={onCancel}>Отмена</button>
-        <button
-          type="button"
-          disabled={!imageData}
-          onClick={() => onApply(localLevels)}
-        >
-          Применить
-        </button>
+            <label className="levels-preview-toggle">
+              <input
+                type="checkbox"
+                checked={previewEnabled}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setPreviewEnabled(enabled);
+                  previewEnabledRef.current = enabled;
+                  emitPreview(true);
+                }}
+              />
+              <span>Предпросмотр</span>
+            </label>
+          </>
+        )}
       </div>
+
+      <div className="levels-footer">
+        <div className="levels-actions">
+          <button
+            type="button"
+            onClick={() => {
+              const reset = createDefaultLevelsState();
+              setLocalLevels(reset);
+              localLevelsRef.current = reset;
+              emitPreview(true);
+            }}
+          >
+            Сброс
+          </button>
+          <button type="button" onClick={onCancel}>Отмена</button>
+          <button
+            type="button"
+            disabled={!histogramData}
+            onClick={() => onApply(localLevels)}
+          >
+            Применить
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="levels-resize-handle"
+        role="separator"
+        aria-label="Изменить размер"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          resizeRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            originW: size.width,
+            originH: size.height,
+          };
+        }}
+      />
     </dialog>
   );
 }
