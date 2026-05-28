@@ -6,9 +6,19 @@ import { ChannelsPanel } from './components/ChannelsPanel';
 import { ColorPicker } from './components/ColorPicker';
 import { ToolsPanel } from './components/ToolsPanel';
 import { LevelsDialog } from './components/LevelsDialog';
+import { ResizeDialog } from './components/ResizeDialog';
+import { KernelFilterDialog } from './components/KernelFilterDialog';
 import { loadImage, downloadAsPng, downloadAsJpg, downloadAsGb7, createCanvasFromImageData, type ImageInfo } from './utils/imageProcessor';
 import { applyChannelFilter, type ChannelState } from './utils/channelUtils';
 import { applyLevelsToImage, createDefaultLevelsState, type LevelsState } from './utils/levelsUtils';
+import { resizeImageData, type InterpolationMethod } from './utils/interpolation';
+import {
+  IDENTITY_KERNEL_MATRIX,
+  applyKernelFilterAsync,
+  createDefaultKernelSettings,
+  matricesApproximatelyEqual,
+  type KernelFilterSettings,
+} from './utils/kernelFilter';
 import './App.css';
 
 interface Layer {
@@ -18,8 +28,12 @@ interface Layer {
   opacity: number;
 }
 
+const MIN_SCALE_PERCENT = 12;
+const MAX_SCALE_PERCENT = 300;
+const DEFAULT_VIEW_INTERPOLATION: InterpolationMethod = 'bilinear';
+
 function App() {
-  const [canvas, setCanvas] = useState<HTMLCanvasElement | undefined>();
+  const [sourceCanvas, setSourceCanvas] = useState<HTMLCanvasElement | undefined>();
   const [imageInfo, setImageInfo] = useState<ImageInfo | undefined>();
   const [status, setStatus] = useState('Готово');
   const [layers, setLayers] = useState<Layer[]>([
@@ -28,9 +42,18 @@ function App() {
   const [originalImageData, setOriginalImageData] = useState<Uint8Array | undefined>();
   const [activeTool, setActiveTool] = useState<'none' | 'picker'>('none');
   const [showChannelsPanel, setShowChannelsPanel] = useState(false);
+  const [showLayersPanel, setShowLayersPanel] = useState(false);
   const [isWindowMenuOpen, setIsWindowMenuOpen] = useState(false);
   const [isImageMenuOpen, setIsImageMenuOpen] = useState(false);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [isLevelsDialogOpen, setIsLevelsDialogOpen] = useState(false);
+  const [isKernelDialogOpen, setIsKernelDialogOpen] = useState(false);
+  const [isResizeDialogOpen, setIsResizeDialogOpen] = useState(false);
+  const [viewScalePercent, setViewScalePercent] = useState(100);
+  const [viewInterpolation, setViewInterpolation] = useState<InterpolationMethod>(DEFAULT_VIEW_INTERPOLATION);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [imageToken, setImageToken] = useState(0);
+  const [autoFitToken, setAutoFitToken] = useState(0);
   const [channels, setChannels] = useState<ChannelState>({
     red: true,
     green: true,
@@ -39,39 +62,123 @@ function App() {
   });
   const [committedLevels, setCommittedLevels] = useState<LevelsState>(createDefaultLevelsState());
   const [previewLevels, setPreviewLevels] = useState<LevelsState | null>(null);
+  const [committedKernel, setCommittedKernel] = useState<KernelFilterSettings>(createDefaultKernelSettings());
+  const [previewKernel, setPreviewKernel] = useState<KernelFilterSettings | null>(null);
+  const [kernelBaseData, setKernelBaseData] = useState<Uint8Array | undefined>();
+  const [isKernelProcessing, setIsKernelProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const levelsForRender = previewLevels ?? committedLevels;
+  const kernelForRender = previewKernel ?? committedKernel;
 
-  const levelsSourceData = useMemo(() => {
-    if (!originalImageData) {
-      return undefined;
-    }
-    return applyLevelsToImage(originalImageData, levelsForRender);
-  }, [originalImageData, levelsForRender]);
+  const isIdentityKernel = useMemo(
+    () => matricesApproximatelyEqual(kernelForRender.matrix, IDENTITY_KERNEL_MATRIX),
+    [kernelForRender]
+  );
 
   useEffect(() => {
+    let isActive = true;
+    const controller = new AbortController();
+
+    const run = async () => {
+      if (!originalImageData || !imageInfo) {
+        setKernelBaseData(undefined);
+        setIsKernelProcessing(false);
+        return;
+      }
+
+      if (isIdentityKernel) {
+        setKernelBaseData(originalImageData);
+        setIsKernelProcessing(false);
+        return;
+      }
+
+      try {
+        setIsKernelProcessing(true);
+        const processed = await applyKernelFilterAsync(
+          originalImageData,
+          imageInfo.width,
+          imageInfo.height,
+          kernelForRender,
+          controller.signal
+        );
+        if (isActive) {
+          setKernelBaseData(processed);
+          setIsKernelProcessing(false);
+        }
+      } catch (error) {
+        if ((error as Error).message !== 'Kernel filter aborted') {
+          console.error(error);
+        }
+        if (isActive) {
+          setIsKernelProcessing(false);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [originalImageData, imageInfo, kernelForRender, isIdentityKernel]);
+
+  const levelsSourceData = useMemo(() => {
+    if (!kernelBaseData) {
+      return undefined;
+    }
+    return applyLevelsToImage(kernelBaseData, levelsForRender);
+  }, [kernelBaseData, levelsForRender]);
+
+  const filteredImageData = useMemo(() => {
     if (!levelsSourceData || !imageInfo) {
-      return;
+      return undefined;
     }
 
-    const filteredData = applyChannelFilter(
+    return applyChannelFilter(
       levelsSourceData,
       imageInfo.width,
       imageInfo.height,
       channels,
       imageInfo.channelCount
     );
-    const newCanvas = createCanvasFromImageData(filteredData, imageInfo.width, imageInfo.height);
-    setCanvas(newCanvas);
   }, [levelsSourceData, imageInfo, channels]);
+
+  useEffect(() => {
+    if (!filteredImageData || !imageInfo) {
+      setSourceCanvas(undefined);
+      return;
+    }
+    setSourceCanvas(createCanvasFromImageData(filteredImageData, imageInfo.width, imageInfo.height));
+  }, [filteredImageData, imageInfo]);
+
+  useEffect(() => {
+    if (!imageInfo || viewportSize.width <= 0 || viewportSize.height <= 0) {
+      return;
+    }
+    if (autoFitToken !== imageToken) {
+      return;
+    }
+
+    const availableWidth = Math.max(1, viewportSize.width - 100);
+    const availableHeight = Math.max(1, viewportSize.height - 100);
+    const fitScale = Math.min(
+      availableWidth / imageInfo.width,
+      availableHeight / imageInfo.height
+    );
+    const nextScale = Math.round(
+      Math.max(MIN_SCALE_PERCENT, Math.min(MAX_SCALE_PERCENT, fitScale * 100))
+    );
+    setViewScalePercent(nextScale);
+    setAutoFitToken(-1);
+  }, [imageInfo, viewportSize, imageToken, autoFitToken]);
 
   const handleImageLoad = async (file: File) => {
     try {
       setStatus(`Загрузка ${file.name}...`);
       const processedImage = await loadImage(file);
       
-      setCanvas(processedImage.canvas);
       setImageInfo(processedImage.info);
       // Сохраняем оригинальные данные для работы с каналами
       if (processedImage.originalData) {
@@ -104,7 +211,15 @@ function App() {
       });
       setCommittedLevels(createDefaultLevelsState());
       setPreviewLevels(null);
+      setCommittedKernel(createDefaultKernelSettings());
+      setPreviewKernel(null);
       setActiveTool('none');
+      setViewInterpolation(DEFAULT_VIEW_INTERPOLATION);
+      setImageToken((prev) => {
+        const next = prev + 1;
+        setAutoFitToken(next);
+        return next;
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
       setStatus(`Ошибка: ${errorMessage}`);
@@ -113,11 +228,11 @@ function App() {
   };
 
   const handleExportPng = () => {
-    if (canvas && imageInfo) {
+    if (sourceCanvas && imageInfo) {
       try {
         setStatus('Сохранение PNG...');
         const fileName = `image_${new Date().getTime()}.png`;
-        downloadAsPng(canvas, fileName);
+        downloadAsPng(sourceCanvas, fileName);
         setStatus(`PNG сохранен: ${fileName}`);
       } catch (error) {
         setStatus('Ошибка сохранения PNG');
@@ -127,11 +242,11 @@ function App() {
   };
 
   const handleExportJpg = () => {
-    if (canvas && imageInfo) {
+    if (sourceCanvas && imageInfo) {
       try {
         setStatus('Сохранение JPG...');
         const fileName = `image_${new Date().getTime()}.jpg`;
-        downloadAsJpg(canvas, fileName, 0.9);
+        downloadAsJpg(sourceCanvas, fileName, 0.9);
         setStatus(`JPG сохранен: ${fileName}`);
       } catch (error) {
         setStatus('Ошибка сохранения JPG');
@@ -141,11 +256,11 @@ function App() {
   };
 
   const handleExportGb7 = () => {
-    if (canvas && imageInfo) {
+    if (sourceCanvas && imageInfo) {
       try {
         setStatus('Сохранение GB7...');
         const fileName = `image_${new Date().getTime()}.gb7`;
-        downloadAsGb7(canvas, fileName, imageInfo.hasMask ?? false);
+        downloadAsGb7(sourceCanvas, fileName, imageInfo.hasMask ?? false);
         setStatus(`GB7 сохранен: ${fileName}`);
       } catch (error) {
         setStatus('Ошибка сохранения GB7');
@@ -182,6 +297,23 @@ function App() {
     setStatus('Уровни: редактирование');
   };
 
+  const handleOpenKernelDialog = () => {
+    if (!originalImageData) {
+      return;
+    }
+    setPreviewKernel(null);
+    setIsKernelDialogOpen(true);
+    setStatus('Фильтр ядром: редактирование');
+  };
+
+  const handleOpenResizeDialog = () => {
+    if (!originalImageData || !imageInfo) {
+      return;
+    }
+    setIsResizeDialogOpen(true);
+    setStatus('Изменение размера: редактирование');
+  };
+
   const handleLevelsPreviewChange = useCallback((nextState: LevelsState | null) => {
     setPreviewLevels(nextState);
     if (nextState) {
@@ -204,6 +336,57 @@ function App() {
     setStatus('Уровни применены');
   };
 
+  const handleKernelApply = (nextSettings: KernelFilterSettings) => {
+    setCommittedKernel({
+      matrix: [...nextSettings.matrix],
+      channels: { ...nextSettings.channels },
+      edgeHandling: nextSettings.edgeHandling,
+    });
+    setPreviewKernel(null);
+    setIsKernelDialogOpen(false);
+    setStatus('Фильтр ядром применен');
+  };
+
+  const handleResizeApply = ({
+    width: nextWidth,
+    height: nextHeight,
+    method,
+  }: {
+    width: number;
+    height: number;
+    method: InterpolationMethod;
+  }) => {
+    if (!originalImageData || !imageInfo) {
+      return;
+    }
+    const resizedData = resizeImageData(
+      originalImageData,
+      imageInfo.width,
+      imageInfo.height,
+      nextWidth,
+      nextHeight,
+      method
+    );
+    setOriginalImageData(resizedData);
+    setImageInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            width: nextWidth,
+            height: nextHeight,
+          }
+        : prev
+    );
+    setIsResizeDialogOpen(false);
+    setViewInterpolation(method);
+    setStatus(`Изображение изменено: ${nextWidth} × ${nextHeight}px (${method})`);
+  };
+
+  const handleScaleChange = (nextScale: number) => {
+    const clampedScale = Math.max(MIN_SCALE_PERCENT, Math.min(MAX_SCALE_PERCENT, Math.round(nextScale)));
+    setViewScalePercent(clampedScale);
+  };
+
   const handleToolClick = (tool: 'none' | 'picker') => {
     setActiveTool(tool);
     if (tool === 'picker') {
@@ -216,6 +399,10 @@ function App() {
   const handleToolSelect = (tool: string) => {
     if (tool === 'eyedropper') {
       handleToolClick(activeTool === 'picker' ? 'none' : 'picker');
+      return;
+    }
+    if (tool === 'zoom') {
+      handleOpenResizeDialog();
       return;
     }
     setActiveTool('none');
@@ -262,6 +449,16 @@ function App() {
                     className="dropdown-menu-item"
                     type="button"
                     role="menuitem"
+                    onClick={handleOpenResizeDialog}
+                    disabled={!originalImageData}
+                  >
+                    <span />
+                    <span>Размер изображения...</span>
+                  </button>
+                  <button
+                    className="dropdown-menu-item"
+                    type="button"
+                    role="menuitem"
                     onClick={handleOpenLevelsDialog}
                     disabled={!originalImageData}
                   >
@@ -273,7 +470,34 @@ function App() {
             </div>
             <button className="menu-item-btn" type="button">Слои</button>
             {/* <button className="menu-item-btn" type="button">Select</button> */}
-            <button className="menu-item-btn" type="button">Фильтр</button>
+            <div
+              className="menu-dropdown"
+              onMouseLeave={() => setIsFilterMenuOpen(false)}
+            >
+              <button
+                className="menu-item-btn"
+                type="button"
+                onClick={() => setIsFilterMenuOpen((prev) => !prev)}
+                aria-expanded={isFilterMenuOpen}
+                aria-haspopup="menu"
+              >
+                Фильтр
+              </button>
+              {isFilterMenuOpen && (
+                <div className="dropdown-menu" role="menu" aria-label="Фильтр">
+                  <button
+                    className="dropdown-menu-item"
+                    type="button"
+                    role="menuitem"
+                    onClick={handleOpenKernelDialog}
+                    disabled={!originalImageData}
+                  >
+                    <span />
+                    <span>Пользовательский фильтр...</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button className="menu-item-btn" type="button">Вид</button>
             <div
               className="menu-dropdown"
@@ -300,6 +524,16 @@ function App() {
                     <span>{showChannelsPanel ? '✓' : ''}</span>
                     <span>Каналы</span>
                   </button>
+                  <button
+                    className="dropdown-menu-item"
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={showLayersPanel}
+                    onClick={() => setShowLayersPanel((prev) => !prev)}
+                  >
+                    <span>{showLayersPanel ? '✓' : ''}</span>
+                    <span>Слои</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -324,7 +558,7 @@ function App() {
             </button>
             <button
               onClick={handleExportPng}
-              disabled={!canvas}
+              disabled={!sourceCanvas}
               className="header-btn"
               aria-label="Экспортировать изображение как PNG"
               title="Сохранить как PNG"
@@ -333,7 +567,7 @@ function App() {
             </button>
               <button
                 onClick={handleExportJpg}
-                disabled={!canvas}
+                disabled={!sourceCanvas}
                 className="header-btn"
                 aria-label="Экспортировать изображение как JPEG"
                 title="Сохранить как JPG"
@@ -342,7 +576,7 @@ function App() {
               </button>
               <button
                 onClick={handleExportGb7}
-                disabled={!canvas}
+                disabled={!sourceCanvas}
                 className="header-btn"
                 aria-label="Экспортировать изображение как GB7"
                 title="Сохранить как GB7 (GrayBit-7)"
@@ -360,11 +594,14 @@ function App() {
         />
         <div className="app-main-left">
           <CanvasDisplay
-            canvas={canvas}
+            canvas={sourceCanvas}
             isPickerActive={activeTool === 'picker'}
             imageData={originalImageData}
             width={imageInfo?.width}
             height={imageInfo?.height}
+            scalePercent={viewScalePercent}
+            onScaleChange={handleScaleChange}
+            onViewportResize={setViewportSize}
           />
         </div>
 
@@ -379,11 +616,13 @@ function App() {
             />
           )}
 
-          <LayersPanel
-            layers={layers}
-            onLayerToggle={handleLayerToggle}
-            onOpacityChange={handleOpacityChange}
-          />
+          {showLayersPanel && (
+            <LayersPanel
+              layers={layers}
+              onLayerToggle={handleLayerToggle}
+              onOpacityChange={handleOpacityChange}
+            />
+          )}
         </div>
       </div>
 
@@ -403,9 +642,35 @@ function App() {
         onCancel={handleLevelsCancel}
       />
 
+      <ResizeDialog
+        isOpen={isResizeDialogOpen}
+        initialWidth={imageInfo?.width ?? 1}
+        initialHeight={imageInfo?.height ?? 1}
+        initialMethod={viewInterpolation}
+        onApply={handleResizeApply}
+        onCancel={() => {
+          setIsResizeDialogOpen(false);
+          setStatus('Изменение размера: отменено');
+        }}
+      />
+
+      <KernelFilterDialog
+        isOpen={isKernelDialogOpen}
+        initialSettings={committedKernel}
+        onPreviewChange={setPreviewKernel}
+        onApply={handleKernelApply}
+        onCancel={() => {
+          setPreviewKernel(null);
+          setIsKernelDialogOpen(false);
+          setStatus('Фильтр ядром: изменения отменены');
+        }}
+      />
+
       <StatusBar
         imageInfo={imageInfo}
-        status={status}
+        status={isKernelProcessing ? 'Фильтр ядром: обработка...' : status}
+        scalePercent={viewScalePercent}
+        onScaleChange={handleScaleChange}
       />
     </div>
   );

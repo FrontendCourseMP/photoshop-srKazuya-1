@@ -38,6 +38,10 @@
   color: #cdcdcd;
 }
 
+.zoom-control input[type='range'] {
+  width: 120px;
+}
+
 .info-item strong {
   font-weight: 600;
   color: #f0f0f0;

@@ -11,9 +11,16 @@ import '../styles/statusBar.css';
 interface StatusBarProps {
   imageInfo?: ImageInfo;
   status: string;
+  scalePercent: number;
+  onScaleChange: (nextScale: number) => void;
 }
 
-export const StatusBar: React.FC<StatusBarProps> = ({ imageInfo, status }) => {
+export const StatusBar: React.FC<StatusBarProps> = ({
+  imageInfo,
+  status,
+  scalePercent,
+  onScaleChange,
+}) => {
   const getFormatLabel = (format: string) => {
     switch (format) {
       case 'png':
@@ -33,6 +40,20 @@ export const StatusBar: React.FC<StatusBarProps> = ({ imageInfo, status }) => {
 
       {imageInfo && (
         <div className="image-info">
+          <label className="info-item zoom-control" htmlFor="status-scale-range">
+            <strong>Масштаб:</strong>
+            <input
+              id="status-scale-range"
+              type="range"
+              min={12}
+              max={300}
+              step={1}
+              value={scalePercent}
+              onChange={(e) => onScaleChange(Number(e.target.value))}
+            />
+            <span>{scalePercent}%</span>
+          </label>
+          <span className="info-item separator">|</span>
           <span className="info-item">
             <strong>Размер:</strong> {imageInfo.width} × {imageInfo.height} px
           </span>

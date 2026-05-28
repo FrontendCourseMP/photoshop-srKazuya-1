@@ -4,9 +4,8 @@
  */
 
 import React from 'react';
-import { MdCrop, MdPanTool, MdZoomIn, MdCircle } from 'react-icons/md';
+import { MdZoomIn } from 'react-icons/md';
 import { BsEyedropper } from 'react-icons/bs';
-import { BiRectangle } from 'react-icons/bi';
 import '../styles/toolsPanel.css';
 
 interface ToolsPanelProps {
@@ -16,12 +15,8 @@ interface ToolsPanelProps {
 
 export const ToolsPanel: React.FC<ToolsPanelProps> = ({ activeTool, onToolSelect }) => {
   const tools = [
-    { id: 'selection', name: 'Прямоугольное выделение', icon: BiRectangle, shortcut: 'M' },
-    { id: 'ellipse', name: 'Эллиптическое выделение', icon: MdCircle, shortcut: 'E' },
-    { id: 'crop', name: 'Кадрирование', icon: MdCrop, shortcut: 'C' },
     { id: 'eyedropper', name: 'Пипетка', icon: BsEyedropper, shortcut: 'I' },
     { id: 'zoom', name: 'Масштабирование', icon: MdZoomIn, shortcut: 'Z' },
-    { id: 'hand', name: 'Навигация', icon: MdPanTool, shortcut: 'H' },
   ];
 
   return (

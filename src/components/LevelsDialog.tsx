@@ -35,6 +35,11 @@ const DEFAULT_HEIGHT = 640;
 const MIN_WIDTH = 280;
 const MIN_HEIGHT = 360;
 const PREVIEW_THROTTLE_MS = 48;
+const MIN_TONE_GAP = 2;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 function fillHistogramBackground(
   ctx: CanvasRenderingContext2D,
@@ -153,9 +158,14 @@ export function LevelsDialog({
   const sanitizeSettings = (
     settings: LevelsState[LevelsTargetChannel]
   ): LevelsState[LevelsTargetChannel] => {
-    const safeBlack = Math.max(0, Math.min(254, Math.round(settings.inputBlack)));
-    const safeWhite = Math.max(safeBlack + 1, Math.min(255, Math.round(settings.inputWhite)));
-    const safeGamma = Math.max(0.1, Math.min(9.9, settings.gamma));
+    const safeBlack = clamp(Math.round(settings.inputBlack), 0, 255 - MIN_TONE_GAP);
+    const safeWhite = clamp(Math.round(settings.inputWhite), safeBlack + MIN_TONE_GAP, 255);
+    const midpoint = clamp(
+      gammaToMidpoint(safeBlack, safeWhite, settings.gamma),
+      safeBlack + 1,
+      safeWhite - 1
+    );
+    const safeGamma = clamp(midpointToGamma(safeBlack, safeWhite, midpoint), 0.1, 9.9);
     return {
       inputBlack: safeBlack,
       inputWhite: safeWhite,
@@ -295,15 +305,19 @@ export function LevelsDialog({
     channelSettings.inputWhite,
     channelSettings.gamma
   );
+  const midpointMin = channelSettings.inputBlack + 1;
+  const midpointMax = channelSettings.inputWhite - 1;
+  const clampedMidpoint = clamp(midpointValue, midpointMin, midpointMax);
 
-  const setChannelSettings = (next: Partial<LevelsState[LevelsTargetChannel]>) => {
+  const updateChannelSettings = (
+    updater: (current: LevelsState[LevelsTargetChannel]) => LevelsState[LevelsTargetChannel]
+  ) => {
     setLocalLevels((prev) => {
+      const current = sanitizeSettings(prev[activeChannel]);
+      const nextSettings = sanitizeSettings(updater(current));
       const updated = {
         ...prev,
-        [activeChannel]: sanitizeSettings({
-          ...prev[activeChannel],
-          ...next,
-        }),
+        [activeChannel]: nextSettings,
       };
       localLevelsRef.current = updated;
       emitPreview(false);
@@ -405,15 +419,26 @@ export function LevelsDialog({
                 id="input-black"
                 type="range"
                 min={0}
-                max={channelSettings.inputWhite - 1}
+                max={channelSettings.inputWhite - MIN_TONE_GAP}
                 value={channelSettings.inputBlack}
                 onChange={(e) => {
-                  const nextBlack = Number(e.target.value);
-                  const midpoint = Math.max(nextBlack + 1, midpointValue);
-                  const safeMid = Math.min(channelSettings.inputWhite - 1, midpoint);
-                  setChannelSettings({
-                    inputBlack: nextBlack,
-                    gamma: midpointToGamma(nextBlack, channelSettings.inputWhite, safeMid),
+                  updateChannelSettings((current) => {
+                    const nextBlack = clamp(
+                      Number(e.target.value),
+                      0,
+                      current.inputWhite - MIN_TONE_GAP
+                    );
+                    const currentMidpoint = clamp(
+                      gammaToMidpoint(current.inputBlack, current.inputWhite, current.gamma),
+                      current.inputBlack + 1,
+                      current.inputWhite - 1
+                    );
+                    const safeMid = clamp(currentMidpoint, nextBlack + 1, current.inputWhite - 1);
+                    return {
+                      ...current,
+                      inputBlack: nextBlack,
+                      gamma: midpointToGamma(nextBlack, current.inputWhite, safeMid),
+                    };
                   });
                 }}
                 onPointerUp={handleSliderPointerUp}
@@ -426,20 +451,18 @@ export function LevelsDialog({
               <input
                 id="input-midpoint"
                 type="range"
-                min={channelSettings.inputBlack + 1}
-                max={channelSettings.inputWhite - 1}
-                value={Math.min(
-                  channelSettings.inputWhite - 1,
-                  Math.max(channelSettings.inputBlack + 1, midpointValue)
-                )}
+                min={midpointMin}
+                max={midpointMax}
+                value={clampedMidpoint}
                 onChange={(e) => {
-                  const midpoint = Number(e.target.value);
-                  setChannelSettings({
-                    gamma: midpointToGamma(
-                      channelSettings.inputBlack,
-                      channelSettings.inputWhite,
-                      midpoint
-                    ),
+                  updateChannelSettings((current) => {
+                    const localMidMin = current.inputBlack + 1;
+                    const localMidMax = current.inputWhite - 1;
+                    const midpoint = clamp(Number(e.target.value), localMidMin, localMidMax);
+                    return {
+                      ...current,
+                      gamma: midpointToGamma(current.inputBlack, current.inputWhite, midpoint),
+                    };
                   });
                 }}
                 onPointerUp={handleSliderPointerUp}
@@ -450,16 +473,27 @@ export function LevelsDialog({
               <input
                 id="input-white"
                 type="range"
-                min={channelSettings.inputBlack + 1}
+                min={channelSettings.inputBlack + MIN_TONE_GAP}
                 max={255}
                 value={channelSettings.inputWhite}
                 onChange={(e) => {
-                  const nextWhite = Number(e.target.value);
-                  const midpoint = Math.min(nextWhite - 1, midpointValue);
-                  const safeMid = Math.max(channelSettings.inputBlack + 1, midpoint);
-                  setChannelSettings({
-                    inputWhite: nextWhite,
-                    gamma: midpointToGamma(channelSettings.inputBlack, nextWhite, safeMid),
+                  updateChannelSettings((current) => {
+                    const nextWhite = clamp(
+                      Number(e.target.value),
+                      current.inputBlack + MIN_TONE_GAP,
+                      255
+                    );
+                    const currentMidpoint = clamp(
+                      gammaToMidpoint(current.inputBlack, current.inputWhite, current.gamma),
+                      current.inputBlack + 1,
+                      current.inputWhite - 1
+                    );
+                    const safeMid = clamp(currentMidpoint, current.inputBlack + 1, nextWhite - 1);
+                    return {
+                      ...current,
+                      inputWhite: nextWhite,
+                      gamma: midpointToGamma(current.inputBlack, nextWhite, safeMid),
+                    };
                   });
                 }}
                 onPointerUp={handleSliderPointerUp}

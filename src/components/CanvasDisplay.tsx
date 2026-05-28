@@ -3,7 +3,7 @@
  * Компонент для отображения canvas с масштабированием и прокруткой
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { getPixelColor } from '../utils/colorUtils';
 import '../styles/canvasDisplay.css';
 
@@ -13,36 +13,63 @@ interface CanvasDisplayProps {
   imageData?: Uint8Array;
   width?: number;
   height?: number;
+  scalePercent?: number;
+  onScaleChange?: (nextScale: number) => void;
+  onViewportResize?: (size: { width: number; height: number }) => void;
 }
 
 export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps>(
-  ({ canvas, isPickerActive = false, imageData, width = 0, height = 0 }, ref) => {
+  (
+    {
+      canvas,
+      isPickerActive = false,
+      imageData,
+      width = 0,
+      height = 0,
+      scalePercent = 100,
+      onScaleChange,
+      onViewportResize,
+    },
+    ref
+  ) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [zoom, setZoom] = useState(100);
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
 
     React.useImperativeHandle(ref, () => containerRef.current as HTMLDivElement);
+    const imageSrc = useMemo(() => (canvas ? canvas.toDataURL() : ''), [canvas]);
 
     useEffect(() => {
-      const handleWheel = (e: WheelEvent) => {
-        if (!containerRef.current || !canvas) return;
-
-        // Ctrl + скролл = зум
-        if (e.ctrlKey) {
-          e.preventDefault();
-          const newZoom = Math.max(10, Math.min(400, zoom + (e.deltaY > 0 ? -10 : 10)));
-          setZoom(newZoom);
-        }
-      };
-
       const container = containerRef.current;
-      if (container) {
-        container.addEventListener('wheel', handleWheel, { passive: false });
-        return () => container.removeEventListener('wheel', handleWheel);
+      if (!container || !onViewportResize) {
+        return;
       }
-    }, [zoom, canvas]);
+      const emitSize = () => {
+        onViewportResize({ width: container.clientWidth, height: container.clientHeight });
+      };
+      emitSize();
+      const observer = new ResizeObserver(emitSize);
+      observer.observe(container);
+      return () => observer.disconnect();
+    }, [onViewportResize]);
+
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container || !onScaleChange) {
+        return;
+      }
+      const handleWheel = (event: WheelEvent) => {
+        if (!event.ctrlKey || !canvas) {
+          return;
+        }
+        event.preventDefault();
+        const delta = event.deltaY > 0 ? -10 : 10;
+        onScaleChange(scalePercent + delta);
+      };
+      container.addEventListener('wheel', handleWheel, { passive: false });
+      return () => container.removeEventListener('wheel', handleWheel);
+    }, [canvas, onScaleChange, scalePercent]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
       if (isPickerActive) {
@@ -124,12 +151,12 @@ export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps
         >
           {canvas ? (
             <img
-              src={canvas.toDataURL()}
+              src={imageSrc}
               alt="Загруженное изображение с размером и информацией о масштабировании"
               style={{
-                width: `${(canvas.width * zoom) / 100}px`,
-                height: `${(canvas.height * zoom) / 100}px`,
-                imageRendering: 'pixelated',
+                width: `${(canvas.width * scalePercent) / 100}px`,
+                height: `${(canvas.height * scalePercent) / 100}px`,
+                imageRendering: 'auto',
               }}
             />
           ) : (
@@ -141,7 +168,7 @@ export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps
 
         <div className="zoom-info" aria-live="polite" aria-atomic="true">
           <span aria-label="Уровень масштабирования">
-            {canvas ? `${zoom}%` : 'Нет изображения'}
+            {canvas ? `${scalePercent}%` : 'Нет изображения'}
           </span>
         </div>
       </div>

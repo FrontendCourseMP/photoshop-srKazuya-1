@@ -106,7 +106,7 @@ const ColorInfoPanel: React.FC<ColorInfoPanelProps> = ({ color, onClose }) => {
         </div>
 
         {/* Детали LAB */}
-        <div className="info-section">
+        {/* <div className="info-section">
           <h5>CIELAB компоненты:</h5>
           <div className="info-row">
             <span className="info-label">L (Lightness):</span>
@@ -120,7 +120,7 @@ const ColorInfoPanel: React.FC<ColorInfoPanelProps> = ({ color, onClose }) => {
             <span className="info-label">b* (Blue-Yellow):</span>
             <span className="info-value">{color.b_lab}</span>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );
