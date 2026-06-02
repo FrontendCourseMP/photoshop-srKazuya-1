@@ -32,6 +32,10 @@ const MIN_SCALE_PERCENT = 12;
 const MAX_SCALE_PERCENT = 300;
 const DEFAULT_VIEW_INTERPOLATION: InterpolationMethod = 'bilinear';
 
+function hasExpectedRgbaLength(data: Uint8Array, info: ImageInfo): boolean {
+  return data.length === info.width * info.height * 4;
+}
+
 function App() {
   const [sourceCanvas, setSourceCanvas] = useState<HTMLCanvasElement | undefined>();
   const [imageInfo, setImageInfo] = useState<ImageInfo | undefined>();
@@ -125,14 +129,20 @@ function App() {
   }, [originalImageData, imageInfo, kernelForRender, isIdentityKernel]);
 
   const levelsSourceData = useMemo(() => {
-    if (!kernelBaseData) {
+    if (!kernelBaseData || !imageInfo) {
+      return undefined;
+    }
+    if (!hasExpectedRgbaLength(kernelBaseData, imageInfo)) {
       return undefined;
     }
     return applyLevelsToImage(kernelBaseData, levelsForRender);
-  }, [kernelBaseData, levelsForRender]);
+  }, [kernelBaseData, imageInfo, levelsForRender]);
 
   const filteredImageData = useMemo(() => {
     if (!levelsSourceData || !imageInfo) {
+      return undefined;
+    }
+    if (!hasExpectedRgbaLength(levelsSourceData, imageInfo)) {
       return undefined;
     }
 
@@ -145,8 +155,47 @@ function App() {
     );
   }, [levelsSourceData, imageInfo, channels]);
 
+  const viewCanvas = useMemo(() => {
+    if (!filteredImageData || !imageInfo) {
+      return undefined;
+    }
+    if (!hasExpectedRgbaLength(filteredImageData, imageInfo)) {
+      return undefined;
+    }
+
+    const targetWidth = Math.max(
+      1,
+      Math.round((imageInfo.width * viewScalePercent) / 100)
+    );
+    const targetHeight = Math.max(
+      1,
+      Math.round((imageInfo.height * viewScalePercent) / 100)
+    );
+
+    if (targetWidth === imageInfo.width && targetHeight === imageInfo.height) {
+      return createCanvasFromImageData(filteredImageData, imageInfo.width, imageInfo.height);
+    }
+
+    // Нижний ползунок масштаба (StatusBar -> handleScaleChange -> viewScalePercent)
+    // приводит именно к ресемплингу этим алгоритмом интерполяции.
+    const resizedForView = resizeImageData(
+      filteredImageData,
+      imageInfo.width,
+      imageInfo.height,
+      targetWidth,
+      targetHeight,
+      viewInterpolation
+    );
+
+    return createCanvasFromImageData(resizedForView, targetWidth, targetHeight);
+  }, [filteredImageData, imageInfo, viewScalePercent, viewInterpolation]);
+
   useEffect(() => {
     if (!filteredImageData || !imageInfo) {
+      setSourceCanvas(undefined);
+      return;
+    }
+    if (!hasExpectedRgbaLength(filteredImageData, imageInfo)) {
       setSourceCanvas(undefined);
       return;
     }
@@ -594,7 +643,7 @@ function App() {
         />
         <div className="app-main-left">
           <CanvasDisplay
-            canvas={sourceCanvas}
+            canvas={viewCanvas}
             isPickerActive={activeTool === 'picker'}
             imageData={originalImageData}
             width={imageInfo?.width}

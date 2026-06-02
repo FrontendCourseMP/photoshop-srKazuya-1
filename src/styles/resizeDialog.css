@@ -20,11 +20,24 @@
 
 .resize-dialog-header {
   padding: 12px 14px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .resize-dialog-header h3 {
   margin: 0;
   font-size: 16px;
+}
+
+.resize-close-btn {
+  border: 1px solid #575757;
+  background: #484848;
+  color: #f2f2f2;
+  border-radius: 4px;
+  width: 28px;
+  height: 24px;
+  cursor: pointer;
 }
 
 .resize-dialog-content {

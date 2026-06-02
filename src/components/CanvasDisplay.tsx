@@ -71,6 +71,10 @@ export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps
       return () => container.removeEventListener('wheel', handleWheel);
     }, [canvas, onScaleChange, scalePercent]);
 
+    useEffect(() => {
+      setScrollPos({ x: 0, y: 0 });
+    }, [imageSrc]);
+
     const handleMouseDown = (e: React.MouseEvent) => {
       if (isPickerActive) {
         // Пипетка активна
@@ -154,8 +158,8 @@ export const CanvasDisplay = React.forwardRef<HTMLDivElement, CanvasDisplayProps
               src={imageSrc}
               alt="Загруженное изображение с размером и информацией о масштабировании"
               style={{
-                width: `${(canvas.width * scalePercent) / 100}px`,
-                height: `${(canvas.height * scalePercent) / 100}px`,
+                width: `${canvas.width}px`,
+                height: `${canvas.height}px`,
                 imageRendering: 'auto',
               }}
             />

@@ -191,6 +191,14 @@ export function ResizeDialog({
       >
         <div className="resize-dialog-header">
           <h3>Размер изображения</h3>
+          <button
+            type="button"
+            className="resize-close-btn"
+            aria-label="Закрыть"
+            onClick={onCancel}
+          >
+            ✕
+          </button>
         </div>
 
         <div className="resize-dialog-content">

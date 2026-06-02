@@ -35,7 +35,8 @@ const DEFAULT_HEIGHT = 640;
 const MIN_WIDTH = 280;
 const MIN_HEIGHT = 360;
 const PREVIEW_THROTTLE_MS = 48;
-const MIN_TONE_GAP = 2;
+const MIN_TONE_GAP = 1;
+type ToneHandle = 'black' | 'mid' | 'white';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -181,6 +182,8 @@ export function LevelsDialog({
   const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
 
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const toneDragRef = useRef<ToneHandle | null>(null);
+  const toneTrackRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{
     startX: number;
     startY: number;
@@ -242,51 +245,6 @@ export function LevelsDialog({
 
   useEffect(() => () => clearPreviewTimer(), []);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    const onMove = (event: MouseEvent) => {
-      if (resizeRef.current) {
-        const nextWidth = Math.max(
-          MIN_WIDTH,
-          resizeRef.current.originW + (event.clientX - resizeRef.current.startX)
-        );
-        const nextHeight = Math.max(
-          MIN_HEIGHT,
-          resizeRef.current.originH + (event.clientY - resizeRef.current.startY)
-        );
-        setSize({ width: nextWidth, height: nextHeight });
-        return;
-      }
-      if (!dragRef.current) {
-        return;
-      }
-      const nextX = dragRef.current.originX + (event.clientX - dragRef.current.startX);
-      const nextY = dragRef.current.originY + (event.clientY - dragRef.current.startY);
-      setPosition({
-        x: Math.max(8, nextX),
-        y: Math.max(8, nextY),
-      });
-    };
-
-    const onUp = () => {
-      if (resizeRef.current) {
-        resizeRef.current = null;
-      }
-      if (dragRef.current) {
-        dragRef.current = null;
-      }
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [isOpen]);
-
   const histogram = useMemo(() => {
     if (!histogramData) {
       return new Array<number>(256).fill(0);
@@ -299,7 +257,9 @@ export function LevelsDialog({
     [histogram, histogramScale]
   );
 
-  const channelSettings = localLevels[activeChannel] ?? createDefaultLevelsState().master;
+  const channelSettings = sanitizeSettings(
+    localLevels[activeChannel] ?? createDefaultLevelsState().master
+  );
   const midpointValue = gammaToMidpoint(
     channelSettings.inputBlack,
     channelSettings.inputWhite,
@@ -325,9 +285,124 @@ export function LevelsDialog({
     });
   };
 
-  const handleSliderPointerUp = () => {
+  const handleSliderPointerUp = useCallback(() => {
     emitPreview(true);
-  };
+  }, [emitPreview]);
+
+  const updateFromToneCursor = useCallback(
+    (clientX: number, handle: ToneHandle) => {
+      const track = toneTrackRef.current;
+      if (!track) {
+        return;
+      }
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0) {
+        return;
+      }
+      const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+      const toneValue = Math.round(ratio * 255);
+
+      if (handle === 'black') {
+        updateChannelSettings((current) => {
+          const nextBlack = clamp(toneValue, 0, current.inputWhite - MIN_TONE_GAP);
+          const currentMidpoint = clamp(
+            gammaToMidpoint(current.inputBlack, current.inputWhite, current.gamma),
+            current.inputBlack + 1,
+            current.inputWhite - 1
+          );
+          const safeMid = clamp(currentMidpoint, nextBlack + 1, current.inputWhite - 1);
+          return {
+            ...current,
+            inputBlack: nextBlack,
+            gamma: midpointToGamma(nextBlack, current.inputWhite, safeMid),
+          };
+        });
+        return;
+      }
+
+      if (handle === 'white') {
+        updateChannelSettings((current) => {
+          const nextWhite = clamp(toneValue, current.inputBlack + MIN_TONE_GAP, 255);
+          const currentMidpoint = clamp(
+            gammaToMidpoint(current.inputBlack, current.inputWhite, current.gamma),
+            current.inputBlack + 1,
+            current.inputWhite - 1
+          );
+          const safeMid = clamp(currentMidpoint, current.inputBlack + 1, nextWhite - 1);
+          return {
+            ...current,
+            inputWhite: nextWhite,
+            gamma: midpointToGamma(current.inputBlack, nextWhite, safeMid),
+          };
+        });
+        return;
+      }
+
+      updateChannelSettings((current) => {
+        const localMidMin = current.inputBlack + 1;
+        const localMidMax = current.inputWhite - 1;
+        const midpoint = clamp(toneValue, localMidMin, localMidMax);
+        return {
+          ...current,
+          gamma: midpointToGamma(current.inputBlack, current.inputWhite, midpoint),
+        };
+      });
+    },
+    [updateChannelSettings]
+  );
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const onMove = (event: MouseEvent) => {
+      if (toneDragRef.current) {
+        updateFromToneCursor(event.clientX, toneDragRef.current);
+        return;
+      }
+      if (resizeRef.current) {
+        const nextWidth = Math.max(
+          MIN_WIDTH,
+          resizeRef.current.originW + (event.clientX - resizeRef.current.startX)
+        );
+        const nextHeight = Math.max(
+          MIN_HEIGHT,
+          resizeRef.current.originH + (event.clientY - resizeRef.current.startY)
+        );
+        setSize({ width: nextWidth, height: nextHeight });
+        return;
+      }
+      if (!dragRef.current) {
+        return;
+      }
+      const nextX = dragRef.current.originX + (event.clientX - dragRef.current.startX);
+      const nextY = dragRef.current.originY + (event.clientY - dragRef.current.startY);
+      setPosition({
+        x: Math.max(8, nextX),
+        y: Math.max(8, nextY),
+      });
+    };
+
+    const onUp = () => {
+      if (toneDragRef.current) {
+        toneDragRef.current = null;
+        handleSliderPointerUp();
+      }
+      if (resizeRef.current) {
+        resizeRef.current = null;
+      }
+      if (dragRef.current) {
+        dragRef.current = null;
+      }
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isOpen, updateFromToneCursor, handleSliderPointerUp]);
 
   if (!isOpen) {
     return null;
@@ -364,6 +439,15 @@ export function LevelsDialog({
         }}
       >
         <h3>Уровни</h3>
+        <button
+          type="button"
+          className="levels-close-btn"
+          aria-label="Закрыть"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={onCancel}
+        >
+          ✕
+        </button>
       </div>
 
       <div className="levels-content">
@@ -414,91 +498,54 @@ export function LevelsDialog({
             </div>
 
             <div className="levels-sliders">
-              <label htmlFor="input-black">Черная точка: {channelSettings.inputBlack}</label>
-              <input
-                id="input-black"
-                type="range"
-                min={0}
-                max={channelSettings.inputWhite - MIN_TONE_GAP}
-                value={channelSettings.inputBlack}
-                onChange={(e) => {
-                  updateChannelSettings((current) => {
-                    const nextBlack = clamp(
-                      Number(e.target.value),
-                      0,
-                      current.inputWhite - MIN_TONE_GAP
-                    );
-                    const currentMidpoint = clamp(
-                      gammaToMidpoint(current.inputBlack, current.inputWhite, current.gamma),
-                      current.inputBlack + 1,
-                      current.inputWhite - 1
-                    );
-                    const safeMid = clamp(currentMidpoint, nextBlack + 1, current.inputWhite - 1);
-                    return {
-                      ...current,
-                      inputBlack: nextBlack,
-                      gamma: midpointToGamma(nextBlack, current.inputWhite, safeMid),
-                    };
-                  });
-                }}
-                onPointerUp={handleSliderPointerUp}
-                onPointerCancel={handleSliderPointerUp}
-              />
-
-              <label htmlFor="input-midpoint">
-                Полутона (Gamma): {channelSettings.gamma.toFixed(2)}
-              </label>
-              <input
-                id="input-midpoint"
-                type="range"
-                min={midpointMin}
-                max={midpointMax}
-                value={clampedMidpoint}
-                onChange={(e) => {
-                  updateChannelSettings((current) => {
-                    const localMidMin = current.inputBlack + 1;
-                    const localMidMax = current.inputWhite - 1;
-                    const midpoint = clamp(Number(e.target.value), localMidMin, localMidMax);
-                    return {
-                      ...current,
-                      gamma: midpointToGamma(current.inputBlack, current.inputWhite, midpoint),
-                    };
-                  });
-                }}
-                onPointerUp={handleSliderPointerUp}
-                onPointerCancel={handleSliderPointerUp}
-              />
-
-              <label htmlFor="input-white">Белая точка: {channelSettings.inputWhite}</label>
-              <input
-                id="input-white"
-                type="range"
-                min={channelSettings.inputBlack + MIN_TONE_GAP}
-                max={255}
-                value={channelSettings.inputWhite}
-                onChange={(e) => {
-                  updateChannelSettings((current) => {
-                    const nextWhite = clamp(
-                      Number(e.target.value),
-                      current.inputBlack + MIN_TONE_GAP,
-                      255
-                    );
-                    const currentMidpoint = clamp(
-                      gammaToMidpoint(current.inputBlack, current.inputWhite, current.gamma),
-                      current.inputBlack + 1,
-                      current.inputWhite - 1
-                    );
-                    const safeMid = clamp(currentMidpoint, current.inputBlack + 1, nextWhite - 1);
-                    return {
-                      ...current,
-                      inputWhite: nextWhite,
-                      gamma: midpointToGamma(current.inputBlack, nextWhite, safeMid),
-                    };
-                  });
-                }}
-                onPointerUp={handleSliderPointerUp}
-                onPointerCancel={handleSliderPointerUp}
-              />
+              <div className="levels-values-row">
+                <span>Черная: {channelSettings.inputBlack}</span>
+                <span>Полутона (Gamma): {channelSettings.gamma.toFixed(2)}</span>
+                <span>Белая: {channelSettings.inputWhite}</span>
+              </div>
+              <div ref={toneTrackRef} className="levels-tone-track" aria-label="Уровни тонов">
+                <div className="levels-tone-gradient" />
+                <button
+                  type="button"
+                  className="levels-tone-handle levels-tone-handle-black"
+                  style={{ left: `${(channelSettings.inputBlack / 255) * 100}%` }}
+                  aria-label="Черная точка"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toneDragRef.current = 'black';
+                    updateFromToneCursor(event.clientX, 'black');
+                  }}
+                />
+                <button
+                  type="button"
+                  className="levels-tone-handle levels-tone-handle-mid"
+                  style={{ left: `${(clampedMidpoint / 255) * 100}%` }}
+                  aria-label="Полутона"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toneDragRef.current = 'mid';
+                    updateFromToneCursor(event.clientX, 'mid');
+                  }}
+                />
+                <button
+                  type="button"
+                  className="levels-tone-handle levels-tone-handle-white"
+                  style={{ left: `${(channelSettings.inputWhite / 255) * 100}%` }}
+                  aria-label="Белая точка"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toneDragRef.current = 'white';
+                    updateFromToneCursor(event.clientX, 'white');
+                  }}
+                />
+              </div>
+              <div className="levels-tone-axis">
+                <span>0</span>
+                <span>255</span>
+              </div>
             </div>
 
             <label className="levels-preview-toggle">
@@ -535,7 +582,16 @@ export function LevelsDialog({
           <button
             type="button"
             disabled={!histogramData}
-            onClick={() => onApply(localLevels)}
+            onClick={() => {
+              const normalized: LevelsState = {
+                master: sanitizeSettings(localLevels.master),
+                red: sanitizeSettings(localLevels.red),
+                green: sanitizeSettings(localLevels.green),
+                blue: sanitizeSettings(localLevels.blue),
+                alpha: sanitizeSettings(localLevels.alpha),
+              };
+              onApply(normalized);
+            }}
           >
             Применить
           </button>
